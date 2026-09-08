@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TigerRAG.Api/TigerRAG.Api.csproj" />
+    <Project Path="src/TigerRAG.Application/TigerRAG.Application.csproj" />
+    <Project Path="src/TigerRAG.Domain/TigerRAG.Domain.csproj" />
+    <Project Path="src/TigerRAG.Infrastructure/TigerRAG.Infrastructure.csproj" />
+    <Project Path="src/TigerRAG.Worker/TigerRAG.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TigerRAG.IntegrationTests/TigerRAG.IntegrationTests.csproj" />
+    <Project Path="tests/TigerRAG.UnitTests/TigerRAG.UnitTests.csproj" />
+  </Folder>
+</Solution>

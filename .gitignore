@@ -1,0 +1,22 @@
+bin/
+obj/
+.vs/
+.vscode/
+*.user
+*.suo
+.env
+node_modules/
+dist/
+coverage/
+TestResults/
+*.log
+.playwright-cli/
+deploy/data/
+
+# Project design / planning documents (not for source repo)
+docs/
+plan-day-work.md
+CLAUDE.md
+claude.md
+Agent.md
+AGENTS.md
