@@ -1,0 +1,177 @@
+using TigerRAG.Application.Security;
+
+namespace TigerRAG.UnitTests.Security;
+
+public sealed class AuthServiceTests
+{
+    [Fact]
+    public async Task LoginAsync_WithValidCredentials_IssuesAccessToken()
+    {
+        var user = new UserAccount(Guid.NewGuid(), "admin", [SystemRoles.Admin]);
+        var expected = new AccessToken("signed-token", DateTimeOffset.UtcNow.AddMinutes(15));
+        var refresh = new RefreshToken("refresh-token", DateTimeOffset.UtcNow.AddDays(7));
+        var sessions = new RecordingRefreshSessionDal(refresh);
+        var service = CreateService(user, expected, sessions);
+
+        var result = await service.LoginAsync("admin", "correct-password", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(user, result.User);
+        Assert.Equal(expected, result.AccessToken);
+        Assert.Equal(refresh, result.RefreshToken);
+        Assert.Equal(user.Id, sessions.CreatedForUserId);
+    }
+
+    [Fact]
+    public async Task LoginAsync_WithInvalidCredentials_ReturnsNull()
+    {
+        var service = CreateService(null, null, new RecordingRefreshSessionDal(null));
+
+        var result = await service.LoginAsync("admin", "wrong-password", CancellationToken.None);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_WithValidRefreshToken_RotatesSessionAndIssuesAccessToken()
+    {
+        var user = new UserAccount(Guid.NewGuid(), "viewer", [SystemRoles.Viewer]);
+        var access = new AccessToken("new-access-token", DateTimeOffset.UtcNow.AddMinutes(15));
+        var refresh = new RefreshToken("new-refresh-token", DateTimeOffset.UtcNow.AddDays(7));
+        var sessions = new RecordingRefreshSessionDal(refresh) { RotatedUser = user };
+        var service = CreateService(null, access, sessions);
+
+        var result = await service.RefreshAsync("old-refresh-token", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(access, result.AccessToken);
+        Assert.Equal(refresh, result.RefreshToken);
+        Assert.Equal("old-refresh-token", sessions.RotatedToken);
+    }
+
+    [Fact]
+    public async Task LogoutAsync_RevokesRefreshToken()
+    {
+        var sessions = new RecordingRefreshSessionDal(null);
+        var service = CreateService(null, null, sessions);
+
+        await service.LogoutAsync("refresh-token", CancellationToken.None);
+
+        Assert.Equal("refresh-token", sessions.RevokedToken);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_WhenSuccessful_RevokesAllUserSessions()
+    {
+        var userId = Guid.NewGuid();
+        var credentials = new RecordingUserCredentialDal(changePasswordResult: true);
+        var sessions = new RecordingRefreshSessionDal(null);
+        var service = new AuthService(
+            new StubUserDal(null),
+            credentials,
+            new StubTokenIssuer(null),
+            sessions);
+
+        var changed = await service.ChangePasswordAsync(
+            userId,
+            "current-password",
+            "new-password-123",
+            CancellationToken.None);
+
+        Assert.True(changed);
+        Assert.Equal(userId, credentials.ChangedUserId);
+        Assert.Equal(userId, sessions.RevokedUserId);
+    }
+
+    private static AuthService CreateService(
+        UserAccount? user,
+        AccessToken? accessToken,
+        RecordingRefreshSessionDal sessions) => new(
+            new StubUserDal(user),
+            new RecordingUserCredentialDal(false),
+            new StubTokenIssuer(accessToken),
+            sessions);
+
+    private sealed class StubUserDal(UserAccount? user) : IUserDal
+    {
+        public Task<UserAccount?> ValidateCredentialsAsync(
+            string userName,
+            string password,
+            CancellationToken cancellationToken) => Task.FromResult(user);
+
+        public Task<IReadOnlyList<UserAccount>> ListAsync(CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task AssignRolesAsync(
+            Guid userId,
+            IReadOnlyCollection<string> roles,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class StubTokenIssuer(AccessToken? token) : IAccessTokenIssuer
+    {
+        public AccessToken Issue(UserAccount user) =>
+            token ?? throw new InvalidOperationException("Token must not be issued.");
+    }
+
+    private sealed class RecordingUserCredentialDal(bool changePasswordResult) : IUserCredentialDal
+    {
+        public Guid? ChangedUserId { get; private set; }
+
+        public Task<bool> ChangePasswordAsync(
+            Guid userId,
+            string currentPassword,
+            string newPassword,
+            CancellationToken cancellationToken)
+        {
+            ChangedUserId = userId;
+            return Task.FromResult(changePasswordResult);
+        }
+
+        public Task<UserAccount> CreateAsync(
+            string userName,
+            string password,
+            IReadOnlyCollection<string> roles,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task ResetPasswordAsync(
+            Guid userId,
+            string newPassword,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingRefreshSessionDal(RefreshToken? token) : IRefreshSessionDal
+    {
+        public Guid? CreatedForUserId { get; private set; }
+        public UserAccount? RotatedUser { get; init; }
+        public string? RotatedToken { get; private set; }
+        public string? RevokedToken { get; private set; }
+        public Guid? RevokedUserId { get; private set; }
+
+        public Task<RefreshToken> CreateAsync(Guid userId, CancellationToken cancellationToken)
+        {
+            CreatedForUserId = userId;
+            return Task.FromResult(token!);
+        }
+
+        public Task<RefreshSession?> RotateAsync(string value, CancellationToken cancellationToken)
+        {
+            RotatedToken = value;
+            return Task.FromResult(RotatedUser is null || token is null
+                ? null
+                : new RefreshSession(RotatedUser, token));
+        }
+
+        public Task RevokeAsync(string value, CancellationToken cancellationToken)
+        {
+            RevokedToken = value;
+            return Task.CompletedTask;
+        }
+
+        public Task RevokeAllAsync(Guid userId, CancellationToken cancellationToken)
+        {
+            RevokedUserId = userId;
+            return Task.CompletedTask;
+        }
+    }
+}
