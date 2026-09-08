@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-TigerRAG.Worker-6872ebf8-084d-4637-b877-b4c8cfaf57aa</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TigerRAG.Application\TigerRAG.Application.csproj" />
+    <ProjectReference Include="..\TigerRAG.Infrastructure\TigerRAG.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
