@@ -1,0 +1,10 @@
+@TigerRAG.Api_HostAddress = http://localhost:5284
+
+GET {{TigerRAG.Api_HostAddress}}/api
+Accept: application/json
+
+###
+
+GET {{TigerRAG.Api_HostAddress}}/health/live
+
+###
