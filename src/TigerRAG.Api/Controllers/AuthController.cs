@@ -18,12 +18,17 @@ public sealed class AuthController(AuthService authService) : ControllerBase
     /// salt 不构成机密，仅用于抗离线暴力；返回 404 仅提示用户名是否存在，与登录失败时的统一错误分开。
     /// </summary>
     [AllowAnonymous]
-    [HttpGet("salt")]
+    [HttpPost("salt")]
     public async Task<ActionResult<ApiResponse<SaltResponse>>> GetSalt(
-        [FromQuery] string userName,
+        [FromBody] SaltRequest request,
         CancellationToken cancellationToken)
     {
-        var salt = await authService.GetSaltAsync(userName, cancellationToken);
+        if (string.IsNullOrWhiteSpace(request.UserName))
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation, "用户名为必填项"));
+        }
+
+        var salt = await authService.GetSaltAsync(request.UserName, cancellationToken);
         if (salt is null)
         {
             return Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, "用户不存在"));
@@ -149,6 +154,8 @@ public sealed class AuthController(AuthService authService) : ControllerBase
         Path = "/api/auth"
     };
 }
+
+public sealed record SaltRequest([Required] string UserName);
 
 public sealed record SaltResponse(string Salt);
 

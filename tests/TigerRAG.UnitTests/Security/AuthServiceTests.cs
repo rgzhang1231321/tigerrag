@@ -102,7 +102,7 @@ public sealed class AuthServiceTests
         public Task<string?> GetPasswordSaltAsync(string userName, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task<IReadOnlyList<UserAccount>> ListAsync(CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<UserListItem>> ListAsync(CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public Task AssignRolesAsync(
@@ -144,6 +144,14 @@ public sealed class AuthServiceTests
         public Task ResetPasswordAsync(
             Guid userId,
             string newPasswordHash,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<bool> DeleteAsync(Guid userId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task SetLockoutAsync(
+            Guid userId,
+            DateTimeOffset? lockoutEnd,
             CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 

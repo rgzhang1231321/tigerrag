@@ -21,6 +21,7 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
     public DbSet<message_record> Messages => Set<message_record>();
     public DbSet<audit_log_record> AuditLogs => Set<audit_log_record>();
     public DbSet<refresh_token_record> RefreshTokens => Set<refresh_token_record>();
+    public DbSet<menu_config_record> MenuConfigs => Set<menu_config_record>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -37,6 +38,7 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
         ConfigureConversations(builder);
         ConfigureAudit(builder);
         ConfigureRefreshTokens(builder);
+        ConfigureMenuConfigs(builder);
         SeedRoles(builder);
     }
 
@@ -116,6 +118,20 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
             entity.HasIndex(value => value.TokenHash).IsUnique();
             entity.HasIndex(value => new { value.UserId, value.RevokedAt });
             entity.HasOne<AppUser>().WithMany().HasForeignKey(value => value.UserId);
+        });
+    }
+
+    private static void ConfigureMenuConfigs(ModelBuilder builder)
+    {
+        builder.Entity<menu_config_record>(entity =>
+        {
+            entity.ToTable("menu_config_record");
+            entity.Property(value => value.Key).HasMaxLength(100);
+            entity.Property(value => value.Label).HasMaxLength(100);
+            entity.Property(value => value.Icon).HasMaxLength(100);
+            entity.Property(value => value.Permission).HasMaxLength(100);
+            entity.HasIndex(value => value.Key).IsUnique();
+            entity.HasOne<menu_config_record>().WithMany().HasForeignKey(value => value.ParentId);
         });
     }
 

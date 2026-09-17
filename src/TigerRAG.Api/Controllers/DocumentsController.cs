@@ -26,7 +26,7 @@ public sealed class DocumentsController(DocumentAccessService documentAccess) : 
     /// <param name="request">允许访问文档的用户标识和角色集合。</param>
     /// <param name="cancellationToken">用于取消当前请求的令牌。</param>
     /// <returns>更新成功时返回空数据；无权或文档不存在时返回对应非零业务码。</returns>
-    [HttpPut("{documentId:guid}/permissions")]
+    [HttpPost("{documentId:guid}/permissions")]
     public async Task<IActionResult> ReplacePermissions(
         Guid documentId,
         ReplaceDocumentPermissionsRequest request,

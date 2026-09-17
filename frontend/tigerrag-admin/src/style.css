@@ -94,16 +94,20 @@ body {
   margin-bottom: 20px;
 }
 
-.app-sider {
-  border-right: 1px solid #e5e7eb;
+.app-header {
+  display: flex;
+  align-items: center;
+  height: 64px;
+  padding: 0 24px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fff;
+  gap: 24px;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  min-height: 64px;
-  padding: 0 20px;
-  border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
 }
 
 .brand h1 {
@@ -112,39 +116,72 @@ body {
   font-size: 21px;
   font-weight: 700;
   letter-spacing: 0;
+  white-space: nowrap;
 }
 
-.app-header {
+.top-nav-menu {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-bottom: none;
+  line-height: 62px;
+}
+
+/* 自定义顶部导航：避开 Antd Menu 水平溢出计算 bug。 */
+.top-nav {
   display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
   align-items: center;
-  justify-content: space-between;
-  height: 64px;
-  padding: 0 24px;
-  border-bottom: 1px solid #e5e7eb;
-  background: #fff;
+  height: 100%;
+  gap: 4px;
 }
 
-.app-header-title {
-  font-size: 15px;
+.top-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 14px;
+  color: #202326;
+  font-size: 14px;
+  text-decoration: none;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.2s;
+}
+
+.top-nav-item:hover {
+  background-color: #f5f6f8;
+  color: #14532d;
+}
+
+.top-nav-item-active {
+  color: #14532d;
   font-weight: 600;
 }
 
-.app-header-leading {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 12px;
+.top-nav-menu .ant-menu-item,
+.top-nav-menu .ant-menu-submenu {
+  padding: 0 16px;
 }
 
 .account-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  flex-shrink: 0;
 }
 
-.mobile-menu-button,
-.mobile-brand {
-  display: none;
+.user-tag {
+  cursor: pointer;
+  padding: 4px 12px;
+  font-size: 14px;
+  border-radius: 4px;
+}
+
+.app-sider {
+  border-right: 1px solid #e5e7eb;
+  background: #fff;
 }
 
 .app-content {
@@ -190,6 +227,57 @@ body {
   background: #fff;
 }
 
+.users-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.users-search {
+  max-width: 320px;
+}
+
+.users-step {
+  margin-bottom: 20px;
+}
+
+.users-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.users-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.users-alert {
+  margin: 8px 0 16px;
+}
+
+.forbidden-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 360px;
+  padding: 32px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.role-permission-matrix {
+  margin-top: 24px;
+}
+
+.role-permission-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 @media (max-width: 760px) {
   .login-page {
     display: block;
@@ -223,22 +311,20 @@ body {
     padding-left: 16px;
   }
 
-  .mobile-menu-button {
-    display: inline-flex;
-  }
-
-  .mobile-brand {
-    display: inline;
-    color: #14532d;
-    font-size: 17px;
-    font-weight: 700;
-  }
-
   .app-header-title {
     display: none;
   }
 
   .metric-grid {
     grid-template-columns: 1fr;
+  }
+
+  .users-search {
+    max-width: none;
+    flex: 1;
+  }
+
+  .users-toolbar {
+    flex-wrap: wrap;
   }
 }

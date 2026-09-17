@@ -29,18 +29,26 @@ public sealed class RefreshSessionDal(
     {
         var hash = Hash(value);
         var now = DateTimeOffset.UtcNow;
+        // 行级锁：在同一事务里查 + 锁定 + 撤销 + 签发，避免两个并发请求拿到同一行。
+        // 默认 READ COMMITTED 隔离下 SELECT FOR UPDATE 会阻塞其他写者，直到本事务提交/回滚。
+        await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var current = await dbContext.RefreshTokens
-            .SingleOrDefaultAsync(token =>
-                token.TokenHash == hash && token.RevokedAt == null && token.ExpiresAt > now,
-                cancellationToken);
+            .FromSqlInterpolated($"""
+                SELECT * FROM refresh_token_record
+                WHERE "TokenHash" = {hash} AND "RevokedAt" IS NULL AND "ExpiresAt" > {now}
+                FOR UPDATE
+                """)
+            .FirstOrDefaultAsync(cancellationToken);
         if (current is null)
         {
+            await tx.RollbackAsync(cancellationToken);
             return null;
         }
 
         var user = await userManager.FindByIdAsync(current.UserId.ToString());
         if (user is null)
         {
+            await tx.RollbackAsync(cancellationToken);
             return null;
         }
 
@@ -49,6 +57,7 @@ public sealed class RefreshSessionDal(
         var replacement = NewToken();
         dbContext.RefreshTokens.Add(Record(user.Id, replacement));
         await dbContext.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
 
         var roles = await userManager.GetRolesAsync(user);
         return new RefreshSession(
@@ -65,7 +74,7 @@ public sealed class RefreshSessionDal(
         {
             return;
         }
-
+        
         token.RevokedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
     }

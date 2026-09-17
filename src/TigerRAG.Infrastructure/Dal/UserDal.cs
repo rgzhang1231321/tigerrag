@@ -34,7 +34,7 @@ public sealed class UserDal(
         // 把客户端 MD5 与服务端 salt 拼接后交给 Identity 走 PBKDF2；salt 永不离开服务端。
         var combined = PasswordSalting.Combine(user.PasswordSalt, passwordHash);
         var result = await signInManager.CheckPasswordSignInAsync(user, combined, lockoutOnFailure: true);
-        return result.Succeeded ? await MapAsync(user) : null;
+        return result.Succeeded ? ToAccount(await MapAsync(user)) : null;
     }
 
     public async Task<string?> GetPasswordSaltAsync(string userName, CancellationToken cancellationToken)
@@ -44,10 +44,10 @@ public sealed class UserDal(
         return user is null || string.IsNullOrEmpty(user.PasswordSalt) ? null : user.PasswordSalt;
     }
 
-    public async Task<IReadOnlyList<UserAccount>> ListAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<UserListItem>> ListAsync(CancellationToken cancellationToken)
     {
         var users = await userManager.Users.OrderBy(user => user.UserName).ToListAsync(cancellationToken);
-        var result = new List<UserAccount>(users.Count);
+        var result = new List<UserListItem>(users.Count);
         foreach (var user in users)
         {
             result.Add(await MapAsync(user));
@@ -108,7 +108,7 @@ public sealed class UserDal(
             EnsureSucceeded(roleResult);
         }
 
-        return await MapAsync(user);
+        return ToAccount(await MapAsync(user));
     }
 
     public async Task SetInitialPasswordAsync(
@@ -117,6 +117,8 @@ public sealed class UserDal(
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        // 入口处先做格式校验：客户端提交的必须是 32 位小写 hex，否则会被原样入 PBKDF2。
+        PasswordHashFormat.EnsureAcceptable(passwordHash);
         var user = await userManager.FindByIdAsync(userId.ToString())
             ?? throw new KeyNotFoundException($"User {userId} was not found.");
         var combined = PasswordSalting.Combine(user.PasswordSalt, passwordHash);
@@ -147,6 +149,8 @@ public sealed class UserDal(
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        // 入口处先做格式校验：客户端提交的必须是 32 位小写 hex，否则会被原样入 PBKDF2。
+        PasswordHashFormat.EnsureAcceptable(newPasswordHash);
         var user = await userManager.FindByIdAsync(userId.ToString())
             ?? throw new KeyNotFoundException($"User {userId} was not found.");
         var combined = PasswordSalting.Combine(user.PasswordSalt, newPasswordHash);
@@ -171,11 +175,38 @@ public sealed class UserDal(
             .Select(roleId => new IdentityUserRole<Guid> { UserId = userId, RoleId = roleId }));
     }
 
-    private async Task<UserAccount> MapAsync(AppUser user)
+    public async Task<bool> DeleteAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var user = await userManager.FindByIdAsync(userId.ToString());
+        if (user is null)
+        {
+            return false;
+        }
+        // 级联删除由 DB 外键约束承担；Identity 删除会清理 UserRoles / UserClaims / UserLogins。
+        EnsureSucceeded(await userManager.DeleteAsync(user));
+        return true;
+    }
+
+    public async Task SetLockoutAsync(
+        Guid userId,
+        DateTimeOffset? lockoutEnd,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var user = await userManager.FindByIdAsync(userId.ToString())
+            ?? throw new KeyNotFoundException($"User {userId} was not found.");
+        EnsureSucceeded(await userManager.SetLockoutEndDateAsync(user, lockoutEnd));
+    }
+
+    private async Task<UserListItem> MapAsync(AppUser user)
     {
         var roles = await userManager.GetRolesAsync(user);
-        return new UserAccount(user.Id, user.UserName ?? string.Empty, roles.ToArray());
+        var isLocked = user.LockoutEnd.HasValue && user.LockoutEnd.Value > DateTimeOffset.UtcNow;
+        return new UserListItem(user.Id, user.UserName ?? string.Empty, roles.ToArray(), isLocked);
     }
+
+    private static UserAccount ToAccount(UserListItem item) => new(item.Id, item.UserName, item.Roles);
 
     private static void EnsureSucceeded(IdentityResult result)
     {

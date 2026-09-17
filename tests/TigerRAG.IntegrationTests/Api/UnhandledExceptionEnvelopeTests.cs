@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -34,7 +35,7 @@ public sealed class UnhandledExceptionEnvelopeTests
         });
         using var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/api/auth/salt?userName=admin");
+        var response = await client.PostAsJsonAsync("/api/auth/salt", new { userName = "admin" });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
@@ -65,7 +66,7 @@ public sealed class UnhandledExceptionEnvelopeTests
         });
         using var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/api/auth/salt?userName=admin");
+        var response = await client.PostAsJsonAsync("/api/auth/salt", new { userName = "admin" });
 
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var envelopeRequestId = body.RootElement.GetProperty("requestId").GetString();
@@ -86,7 +87,7 @@ public sealed class UnhandledExceptionEnvelopeTests
         public Task<string?> GetPasswordSaltAsync(string userName, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("synthetic dal failure");
 
-        public Task<IReadOnlyList<UserAccount>> ListAsync(CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<UserListItem>> ListAsync(CancellationToken cancellationToken) =>
             throw new InvalidOperationException("synthetic dal failure");
 
         public Task AssignRolesAsync(Guid userId, IReadOnlyCollection<string> roles, CancellationToken cancellationToken) =>

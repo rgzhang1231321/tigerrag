@@ -47,6 +47,7 @@ public static class InfrastructureComposition
         services.AddScoped<IRefreshSessionDal, RefreshSessionDal>();
         services.AddScoped<IAdminBootstrapper, AdminBootstrapper>();
         services.AddScoped<IDocumentAccessDal, DocumentAccessDal>();
+        services.AddScoped<IMenuConfigDal, MenuConfigDal>();
         services.AddScoped<IAccessTokenIssuer, JwtAccessTokenIssuer>();
         services.AddScoped<AuthService>();
         services.AddScoped<UserRoleService>();

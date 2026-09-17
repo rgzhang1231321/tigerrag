@@ -28,6 +28,9 @@ public sealed class JwtAccessTokenIssuer(IOptions<JwtOptions> options) : IAccess
             new(ClaimTypes.Name, user.UserName)
         };
         claims.AddRange(user.Roles.Select(role => new Claim(ClaimTypes.Role, role)));
+        // permission claim 由服务端按 RolePermissionMap 聚合写入，前端不得自行从 role 推导。
+        var permissions = RolePermissionMap.PermissionsFor(user.Roles);
+        claims.AddRange(permissions.Select(permission => new Claim("permission", permission)));
 
         var credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(settings.SigningKey)),

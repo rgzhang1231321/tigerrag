@@ -19,4 +19,32 @@ public sealed class RolePermissionMapTests
     {
         Assert.Equal(expected, RolePermissionMap.IsAllowed(role, permission));
     }
+
+    [Fact]
+    public void PermissionsFor_Admin_ReturnsAllPermissions()
+    {
+        var permissions = RolePermissionMap.PermissionsFor([SystemRoles.Admin]);
+        Assert.Equal(new HashSet<string>(SystemPermissions.All), permissions);
+    }
+
+    [Fact]
+    public void PermissionsFor_MultipleRoles_MergesWithoutDuplicates()
+    {
+        var permissions = RolePermissionMap.PermissionsFor([SystemRoles.Editor, SystemRoles.Viewer]);
+        Assert.Equal(new HashSet<string>([SystemPermissions.ManageDocuments, SystemPermissions.UseChat]), permissions);
+    }
+
+    [Fact]
+    public void PermissionsFor_UnknownRole_IsIgnored()
+    {
+        var permissions = RolePermissionMap.PermissionsFor(["NonExistent"]);
+        Assert.Empty(permissions);
+    }
+
+    [Fact]
+    public void PermissionsFor_EmptyRoles_ReturnsEmpty()
+    {
+        var permissions = RolePermissionMap.PermissionsFor([]);
+        Assert.Empty(permissions);
+    }
 }

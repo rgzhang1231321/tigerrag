@@ -13,7 +13,7 @@ public sealed class AuditLogsController : ControllerBase
 {
     /// <summary>获取审计日志列表；当前骨架阶段尚未实现具体业务逻辑。</summary>
     /// <returns>当前返回业务码 50100，表示审计服务尚未实现。</returns>
-    [HttpGet]
+    [HttpPost("list")]
     public IActionResult List() => Ok(ApiResponse<object?>.Failure(
         FlagStatesOption.NotImplemented,
         "审计服务尚未实现"));

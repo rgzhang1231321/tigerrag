@@ -9,6 +9,7 @@ namespace TigerRAG.UnitTests.Logging;
 /// 验证 <see cref="TigerRagSqlLogger"/> 在每次 Log 调用时把当前 HTTP 请求的 RequestId 写入条目；
 /// requestId 是用户排查问题时前后端对齐的唯一抓手，不能丢。
 /// </summary>
+[Collection(nameof(ApiLogBufferCollection))]
 public sealed class TigerRagSqlLoggerTests
 {
     public TigerRagSqlLoggerTests()

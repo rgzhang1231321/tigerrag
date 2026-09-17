@@ -29,8 +29,8 @@ public sealed class AdminBootstrapCommandTests
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["BOOTSTRAP_ADMIN_USERNAME"] = "admin",
-                ["BOOTSTRAP_ADMIN_PASSWORD"] = "initial-password"
+                ["BootstrapAdmin:UserName"] = "admin",
+                ["BootstrapAdmin:Password"] = "initial-password"
             })
             .Build();
 

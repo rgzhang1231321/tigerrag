@@ -3,6 +3,9 @@ namespace TigerRAG.Application.Security;
 /// <summary>聚合根对外暴露的用户视图，含 Id、用户名与角色集合。</summary>
 public sealed record UserAccount(Guid Id, string UserName, IReadOnlyList<string> Roles);
 
+/// <summary>用户列表行视图：在 <see cref="UserAccount"/> 基础上追加锁口状态，供前端展示与开关。</summary>
+public sealed record UserListItem(Guid Id, string UserName, IReadOnlyList<string> Roles, bool IsLocked);
+
 /// <summary>JWT 访问令牌与其到期时间。仅在内存中传递给调用方。</summary>
 public sealed record AccessToken(string Value, DateTimeOffset ExpiresAt);
 
@@ -33,7 +36,7 @@ public interface IUserDal
     /// <summary>取用户的密码盐值；用户不存在时返回 null。该 salt 必须来自 DB，绝不信任客户端。</summary>
     Task<string?> GetPasswordSaltAsync(string userName, CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<UserAccount>> ListAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<UserListItem>> ListAsync(CancellationToken cancellationToken);
 
     Task AssignRolesAsync(
         Guid userId,
@@ -79,6 +82,15 @@ public interface IUserCredentialDal
         Guid userId,
         string newPasswordHash,
         CancellationToken cancellationToken);
+
+    /// <summary>删除用户及其全部关联数据（凭据、角色绑定、刷新会话）。用户不存在时返回 false。</summary>
+    Task<bool> DeleteAsync(Guid userId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 设置用户锁口到期时间：<c>lockoutEnd</c> 为 null 表示解锁，为未来时间表示锁定。
+    /// 被锁用户的 <c>CheckPasswordSignInAsync</c> 会直接失败，无法登录。
+    /// </summary>
+    Task SetLockoutAsync(Guid userId, DateTimeOffset? lockoutEnd, CancellationToken cancellationToken);
 }
 
 /// <summary>刷新会话生命周期 DAL 端口；创建/轮换/撤销/全量撤销。</summary>
@@ -117,4 +129,47 @@ public interface IDocumentAccessDal
         IReadOnlyCollection<Guid> userIds,
         IReadOnlyCollection<string> roles,
         CancellationToken cancellationToken);
+}
+
+/// <summary>菜单配置视图：前端导航渲染与管理页共用。</summary>
+public sealed record MenuConfigItem(
+    Guid Id,
+    string Key,
+    string Label,
+    string? Icon,
+    string? Permission,
+    Guid? ParentId,
+    int SortOrder,
+    bool IsEnabled);
+
+/// <summary>菜单配置 DAL 端口。</summary>
+public interface IMenuConfigDal
+{
+    /// <summary>按 SortOrder 列出全部菜单配置。</summary>
+    Task<IReadOnlyList<MenuConfigItem>> ListAsync(CancellationToken cancellationToken);
+
+    /// <summary>新建菜单配置，返回落库后的完整视图。</summary>
+    Task<MenuConfigItem> CreateAsync(
+        string key,
+        string label,
+        string? icon,
+        string? permission,
+        Guid? parentId,
+        int sortOrder,
+        bool isEnabled,
+        CancellationToken cancellationToken);
+
+    /// <summary>更新菜单配置；记录不存在时返回 null。</summary>
+    Task<MenuConfigItem?> UpdateAsync(
+        Guid id,
+        string? label,
+        string? icon,
+        string? permission,
+        Guid? parentId,
+        int? sortOrder,
+        bool? isEnabled,
+        CancellationToken cancellationToken);
+
+    /// <summary>删除菜单配置（级联删除子项）；记录不存在时返回 false。</summary>
+    Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken);
 }

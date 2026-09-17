@@ -1,9 +1,12 @@
 using TigerRAG.Api.Filters;
 using TigerRAG.Api.Hubs;
 using TigerRAG.Api.Middleware;
+using System.Net;
 using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
 using TigerRAG.Application.Security;
 using TigerRAG.Infrastructure.Logging;
@@ -56,11 +59,23 @@ public static class ApiComposition
                     policy.RequireRole(RolePermissionMap.RolesFor(permission)));
             }
         });
+
+        // 反向代理场景：必须显式配置 KnownIPNetworks/ForwardedFor 信任范围，
+        // 否则任意客户端可伪造 X-Forwarded-* 头绕过 TLS 标记。仅读 X-Forwarded-Proto，
+        // 项目目前不依赖客户端真实 IP，不读 X-Forwarded-For。
+        services.Configure<ForwardedHeadersOptions>(configuration.GetSection("ReverseProxy"));
+        services.PostConfigure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedProto;
+            // 配置节只填 KnownIPNetworks（CIDR）；已废弃的 KnownNetworks 不读，避免新旧两边漂移。
+        });
         return services;
     }
 
     public static WebApplication MapTigerRagApi(this WebApplication app)
     {
+        // 必须最先注册：让 Request.IsHttps 在反向代理后能正确反映 X-Forwarded-Proto。
+        app.UseForwardedHeaders();
         app.UseMiddleware<RequestIdMiddleware>();
         app.UseExceptionHandler();
         app.UseMiddleware<ApiResponseMiddleware>();

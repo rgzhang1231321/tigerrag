@@ -28,6 +28,7 @@ public sealed class AuthService(
 
         var refreshToken = await refreshSessions.CreateAsync(user.Id, cancellationToken);
         return new LoginResult(user, tokens.Issue(user), refreshToken);
+
     }
 
     /// <summary>刷新：原会话原子撤销并发新会话。</summary>

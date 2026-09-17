@@ -4,6 +4,8 @@ namespace TigerRAG.UnitTests.Security;
 
 public sealed class UserRoleServiceTests
 {
+    private static RecordingMenuConfigDal MenuConfigs = new();
+
     [Fact]
     public async Task AssignRolesAsync_WithUnknownRole_RejectsRequest()
     {
@@ -38,7 +40,8 @@ public sealed class UserRoleServiceTests
         var service = new UserRoleService(
             new RecordingUserDal(),
             credentials,
-            new RecordingRefreshSessionDal());
+            new RecordingRefreshSessionDal(),
+            MenuConfigs);
 
         var user = await service.CreateAsync(
             "new-user",
@@ -50,19 +53,39 @@ public sealed class UserRoleServiceTests
     }
 
     [Fact]
-    public async Task SetInitialPasswordAsync_ForwardsHashToCredentialDal()
+    public async Task SetInitialPasswordAsync_ForwardsHashAndRevokesAllSessions()
     {
         var credentials = new RecordingCredentialDal();
+        var sessions = new RecordingRefreshSessionDal();
         var service = new UserRoleService(
             new RecordingUserDal(),
             credentials,
-            new RecordingRefreshSessionDal());
+            sessions,
+            MenuConfigs);
         var userId = Guid.NewGuid();
 
         await service.SetInitialPasswordAsync(userId, "client-md5-hash", CancellationToken.None);
 
         Assert.Equal(userId, credentials.SetInitialPasswordUserId);
         Assert.Equal("client-md5-hash", credentials.SetInitialPasswordHash);
+        Assert.Equal(userId, sessions.RevokedUserId);
+    }
+
+    [Fact]
+    public async Task SetInitialPasswordAsync_WhenCredentialFails_DoesNotRevoke()
+    {
+        var credentials = new ThrowingCredentialDal();
+        var sessions = new RecordingRefreshSessionDal();
+        var service = new UserRoleService(
+            new RecordingUserDal(),
+            credentials,
+            sessions,
+            MenuConfigs);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.SetInitialPasswordAsync(Guid.NewGuid(), "client-md5-hash", CancellationToken.None));
+
+        Assert.Null(sessions.RevokedUserId);
     }
 
     [Fact]
@@ -70,7 +93,7 @@ public sealed class UserRoleServiceTests
     {
         var credentials = new RecordingCredentialDal();
         var sessions = new RecordingRefreshSessionDal();
-        var service = new UserRoleService(new RecordingUserDal(), credentials, sessions);
+        var service = new UserRoleService(new RecordingUserDal(), credentials, sessions, MenuConfigs);
         var userId = Guid.NewGuid();
 
         await service.ResetPasswordAsync(userId, "client-md5-hash", CancellationToken.None);
@@ -79,10 +102,86 @@ public sealed class UserRoleServiceTests
         Assert.Equal(userId, sessions.RevokedUserId);
     }
 
+    [Fact]
+    public async Task DeleteAsync_RevokesAllSessionsThenDeletes()
+    {
+        var credentials = new RecordingCredentialDal();
+        var sessions = new RecordingRefreshSessionDal();
+        var service = new UserRoleService(new RecordingUserDal(), credentials, sessions, MenuConfigs);
+        var userId = Guid.NewGuid();
+
+        var deleted = await service.DeleteAsync(userId, CancellationToken.None);
+
+        Assert.True(deleted);
+        // 先撤销会话、再删账号：顺序很关键，避免删完账号后会话孤立。
+        Assert.Equal(userId, sessions.RevokedUserId);
+        Assert.Equal(userId, credentials.DeletedUserId);
+    }
+
+    [Fact]
+    public async Task SetLockoutAsync_WhenLocking_RevokesAllSessions()
+    {
+        var credentials = new RecordingCredentialDal();
+        var sessions = new RecordingRefreshSessionDal();
+        var service = new UserRoleService(new RecordingUserDal(), credentials, sessions, MenuConfigs);
+        var userId = Guid.NewGuid();
+        var lockoutEnd = DateTimeOffset.UtcNow.AddYears(100);
+
+        await service.SetLockoutAsync(userId, lockoutEnd, CancellationToken.None);
+
+        Assert.Equal(userId, credentials.LockoutUserId);
+        Assert.Equal(lockoutEnd, credentials.LockoutEnd);
+        Assert.Equal(userId, sessions.RevokedUserId);
+    }
+
+    [Fact]
+    public async Task SetLockoutAsync_WhenUnlocking_DoesNotRevoke()
+    {
+        var credentials = new RecordingCredentialDal();
+        var sessions = new RecordingRefreshSessionDal();
+        var service = new UserRoleService(new RecordingUserDal(), credentials, sessions, MenuConfigs);
+
+        await service.SetLockoutAsync(Guid.NewGuid(), null, CancellationToken.None);
+
+        Assert.Null(sessions.RevokedUserId);
+    }
+
     private static UserRoleService CreateService(IUserDal users) => new(
         users,
         new RecordingCredentialDal(),
-        new RecordingRefreshSessionDal());
+        new RecordingRefreshSessionDal(),
+        MenuConfigs);
+
+    private sealed class RecordingMenuConfigDal : IMenuConfigDal
+    {
+        public Task<IReadOnlyList<MenuConfigItem>> ListAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<MenuConfigItem>>([]);
+
+        public Task<MenuConfigItem> CreateAsync(
+            string key,
+            string label,
+            string? icon,
+            string? permission,
+            Guid? parentId,
+            int sortOrder,
+            bool isEnabled,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new MenuConfigItem(Guid.NewGuid(), key, label, icon, permission, parentId, sortOrder, isEnabled));
+
+        public Task<MenuConfigItem?> UpdateAsync(
+            Guid id,
+            string? label,
+            string? icon,
+            string? permission,
+            Guid? parentId,
+            int? sortOrder,
+            bool? isEnabled,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<MenuConfigItem?>(new MenuConfigItem(id, "stub", label ?? "label", icon, permission, parentId, sortOrder ?? 0, isEnabled ?? true));
+
+        public Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken) =>
+            Task.FromResult(true);
+    }
 
     private sealed class RecordingUserDal : IUserDal
     {
@@ -96,7 +195,7 @@ public sealed class UserRoleServiceTests
         public Task<string?> GetPasswordSaltAsync(string userName, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task<IReadOnlyList<UserAccount>> ListAsync(CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<UserListItem>> ListAsync(CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public Task AssignRolesAsync(
@@ -149,6 +248,26 @@ public sealed class UserRoleServiceTests
             ResetUserId = userId;
             return Task.CompletedTask;
         }
+
+        public Task<bool> DeleteAsync(Guid userId, CancellationToken cancellationToken)
+        {
+            DeletedUserId = userId;
+            return Task.FromResult(true);
+        }
+
+        public Task SetLockoutAsync(
+            Guid userId,
+            DateTimeOffset? lockoutEnd,
+            CancellationToken cancellationToken)
+        {
+            LockoutUserId = userId;
+            LockoutEnd = lockoutEnd;
+            return Task.CompletedTask;
+        }
+
+        public Guid? DeletedUserId { get; private set; }
+        public Guid? LockoutUserId { get; private set; }
+        public DateTimeOffset? LockoutEnd { get; private set; }
     }
 
     private sealed class RecordingRefreshSessionDal : IRefreshSessionDal
@@ -169,5 +288,26 @@ public sealed class UserRoleServiceTests
             RevokedUserId = userId;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class ThrowingCredentialDal : IUserCredentialDal
+    {
+        public Task<UserAccount> CreateAsync(string userName, IReadOnlyCollection<string> roles, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task SetInitialPasswordAsync(Guid userId, string passwordHash, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("credential write failed");
+
+        public Task<bool> ChangePasswordAsync(Guid userId, string currentPasswordHash, string newPasswordHash, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task ResetPasswordAsync(Guid userId, string newPasswordHash, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<bool> DeleteAsync(Guid userId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task SetLockoutAsync(Guid userId, DateTimeOffset? lockoutEnd, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 }

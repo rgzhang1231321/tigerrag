@@ -1,5 +1,6 @@
 import { md5 } from 'js-md5'
 import type { AuthSession } from './authStore'
+import { useAuthStore } from './authStore'
 
 // 与后端 FlagStatesOption 数值一一对应；保持数字字面量以便老调用方按数值兼容。
 const FlagStatesOption = {
@@ -42,11 +43,35 @@ export async function logout(): Promise<void> {
   ensureSuccess(envelope, '退出登录失败')
 }
 
+/// <summary>修改当前登录用户的密码。成功后服务端会删除 refresh cookie 并撤销全部会话，调用方应引导重新登录。</summary>
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const userName = useAuthStore.getState().user?.userName
+  if (userName === undefined) {
+    throw new Error('未登录')
+  }
+  const salt = await fetchSalt(userName)
+  const currentPasswordHash = md5(currentPassword + salt).toLowerCase()
+  const newPasswordHash = md5(newPassword + salt).toLowerCase()
+  const response = await fetch('/api/auth/change-password', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${useAuthStore.getState().accessToken ?? ''}`,
+    },
+    body: JSON.stringify({ currentPasswordHash, newPasswordHash }),
+  })
+  const envelope = (await response.json()) as ApiEnvelope<null>
+  ensureSuccess(envelope, '修改密码失败')
+}
+
 async function fetchSalt(userName: string): Promise<string> {
-  const response = await fetch(
-    `/api/auth/salt?userName=${encodeURIComponent(userName)}`,
-    { credentials: 'include' },
-  )
+  const response = await fetch('/api/auth/salt', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userName }),
+  })
   const envelope = (await response.json()) as ApiEnvelope<{ salt: string } | null>
   if (!envelope.flag || !envelope.data) {
     throw new Error(envelope.message || '用户不存在')

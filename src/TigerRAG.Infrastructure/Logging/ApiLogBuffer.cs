@@ -16,6 +16,10 @@ public static class ApiLogBuffer
     private static readonly List<ApiLogEntry> Pending = new();
     private static ApiLogConfiguration? _configuration;
     private static IConfiguration? _appConfiguration;
+    private static long _failureCount;
+
+    /// <summary>DB 写入失败累计计数；观测用，不影响主流程。线程安全。</summary>
+    public static long FailureCount => Interlocked.Read(ref _failureCount);
 
     /// <summary>由 DI 容器在启动期一次性调用；不重复配置则跳过。</summary>
     public static void Configure(ApiLogConfiguration configuration, IConfiguration appConfiguration)
@@ -33,8 +37,16 @@ public static class ApiLogBuffer
         {
             return;
         }
+
         lock (Gate)
         {
+            // 容量上限：超过时丢最旧，保证内存有界；保留最新窗口便于排障。
+            var capacity = _configuration.Capacity;
+            if (capacity > 0 && Pending.Count >= capacity)
+            {
+                Pending.RemoveAt(0);
+            }
+
             Pending.Add(entry);
         }
     }
@@ -51,10 +63,17 @@ public static class ApiLogBuffer
             {
                 return 0;
             }
+
             configuration = _configuration;
             appConfiguration = _appConfiguration;
-            batch = new List<ApiLogEntry>(Pending);
-            Pending.Clear();
+            // 按 BatchSize 截断：单批 INSERT 大小有界；剩余留给下一轮。
+            var take = Math.Min(configuration.BatchSize, Pending.Count);
+            if (take <= 0)
+            {
+                return 0;
+            }
+
+            batch = Pending.GetRange(0, take);
         }
 
         try
@@ -77,11 +96,20 @@ public static class ApiLogBuffer
                 }, transaction);
             }
             transaction.Commit();
+
+            // 写入成功的 batch 才从 Pending 摘除，失败则保留待下一轮重试。
+            lock (Gate)
+            {
+                Pending.RemoveRange(0, batch.Count);
+            }
+
             return batch.Count;
         }
-        catch
+        catch (Exception ex)
         {
-            // 日志组件自身故障不能拖垮请求处理；丢弃条目避免重试无限堆积。
+            // 失败可观测：stderr 留痕 + 计数器自增；条目仍留缓冲里等下轮重试。
+            Interlocked.Increment(ref _failureCount);
+            Console.Error.WriteLine($"[ApiLogBuffer] flush failed: {ex.GetType().Name}: {ex.Message}");
             return 0;
         }
     }

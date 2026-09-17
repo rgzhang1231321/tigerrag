@@ -12,11 +12,15 @@ public sealed class ApiLogConfiguration
     {
         [LogLevel.Warning] = true,
         [LogLevel.Error] = true,
-        [LogLevel.Critical] = true
+        [LogLevel.Critical] = true,
+        [LogLevel.Information] = true
     };
 
     /// <summary>缓存满多少条后触发批量 INSERT；按调用频次预估（默认 100 条已足够覆盖 30s 窗口）。</summary>
     public int BatchSize { get; set; } = 100;
+
+    /// <summary>缓冲容量上限。超出按"丢最旧"策略，避免 DB 长时间不可达时内存失控。</summary>
+    public int Capacity { get; set; } = 1000;
 
     /// <summary>定时 flush 兜底，避免长尾请求一直压在内存里。</summary>
     public TimeSpan FlushInterval { get; set; } = TimeSpan.FromSeconds(30);

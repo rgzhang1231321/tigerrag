@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '../features/auth/authStore'
@@ -19,7 +20,15 @@ describe('TigerRAG authentication shell', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('restores the session from the refresh cookie', async () => {
-    vi.mocked(fetch).mockResolvedValue(jsonResponse(envelope(session)))
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (url === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse(envelope(session)))
+      }
+      if (url === '/api/menu-configs/tree') {
+        return Promise.resolve(jsonResponse(envelope([])))
+      }
+      return Promise.resolve(jsonResponse(envelope(null, false, '未授权'), true))
+    })
     await renderApp()
 
     expect(await screen.findByRole('heading', { name: 'TigerRAG' })).toBeInTheDocument()
@@ -28,10 +37,21 @@ describe('TigerRAG authentication shell', () => {
   })
 
   it('logs in and keeps the access token in memory', async () => {
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(jsonResponse(envelope(null, false, '未授权'), true))
-      .mockResolvedValueOnce(jsonResponse(envelope({ salt: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' })))
-      .mockResolvedValueOnce(jsonResponse(envelope(session)))
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (url === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse(envelope(null, false, '未授权'), true))
+      }
+      if (url === '/api/auth/salt') {
+        return Promise.resolve(jsonResponse(envelope({ salt: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' })))
+      }
+      if (url === '/api/auth/login') {
+        return Promise.resolve(jsonResponse(envelope(session)))
+      }
+      if (url === '/api/menu-configs/tree') {
+        return Promise.resolve(jsonResponse(envelope([])))
+      }
+      return Promise.resolve(jsonResponse(envelope(null, false, '未授权'), true))
+    })
     await renderApp()
 
     await screen.findByLabelText('用户名')
@@ -46,13 +66,29 @@ describe('TigerRAG authentication shell', () => {
     expect(useAuthStore.getState().accessToken).toBe('access-token')
   })
 
-  it('logs out and returns to the login page', async () => {
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(jsonResponse(envelope(session)))
-      .mockResolvedValueOnce(jsonResponse(envelope(null)))
+  it('logs out via the user dropdown and returns to the login page', async () => {
+    vi.mocked(fetch).mockImplementation((url) => {
+      if (url === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse(envelope(session)))
+      }
+      if (url === '/api/menu-configs/tree') {
+        return Promise.resolve(jsonResponse(envelope([])))
+      }
+      if (url === '/api/auth/logout') {
+        return Promise.resolve(jsonResponse(envelope(null)))
+      }
+      return Promise.resolve(jsonResponse(envelope(null, false, '未授权'), true))
+    })
     await renderApp()
+
+    await screen.findByText('admin')
     await act(async () => {
-      fireEvent.click(await screen.findByRole('button', { name: '退出登录' }))
+      fireEvent.click(screen.getByText('admin'))
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      fireEvent.click(await screen.findByText('退出登录'))
       await Promise.resolve()
     })
 
@@ -62,11 +98,19 @@ describe('TigerRAG authentication shell', () => {
 })
 
 async function renderApp() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  })
   await act(async () => {
     render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <App />
+        </MemoryRouter>
+      </QueryClientProvider>,
     )
     await Promise.resolve()
   })
