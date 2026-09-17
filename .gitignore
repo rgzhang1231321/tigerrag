@@ -11,6 +11,8 @@ coverage/
 TestResults/
 *.log
 .playwright-cli/
+.playwright-mcp/
+.tools/
 deploy/data/
 
 # Project design / planning documents (not for source repo)

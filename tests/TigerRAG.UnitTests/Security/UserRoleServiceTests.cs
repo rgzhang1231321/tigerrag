@@ -42,12 +42,27 @@ public sealed class UserRoleServiceTests
 
         var user = await service.CreateAsync(
             "new-user",
-            "initial-password",
             [SystemRoles.Viewer, SystemRoles.Editor, SystemRoles.Viewer],
             CancellationToken.None);
 
         Assert.Equal("new-user", user.UserName);
         Assert.Equal([SystemRoles.Editor, SystemRoles.Viewer], credentials.CreatedRoles);
+    }
+
+    [Fact]
+    public async Task SetInitialPasswordAsync_ForwardsHashToCredentialDal()
+    {
+        var credentials = new RecordingCredentialDal();
+        var service = new UserRoleService(
+            new RecordingUserDal(),
+            credentials,
+            new RecordingRefreshSessionDal());
+        var userId = Guid.NewGuid();
+
+        await service.SetInitialPasswordAsync(userId, "client-md5-hash", CancellationToken.None);
+
+        Assert.Equal(userId, credentials.SetInitialPasswordUserId);
+        Assert.Equal("client-md5-hash", credentials.SetInitialPasswordHash);
     }
 
     [Fact]
@@ -58,7 +73,7 @@ public sealed class UserRoleServiceTests
         var service = new UserRoleService(new RecordingUserDal(), credentials, sessions);
         var userId = Guid.NewGuid();
 
-        await service.ResetPasswordAsync(userId, "temporary-password", CancellationToken.None);
+        await service.ResetPasswordAsync(userId, "client-md5-hash", CancellationToken.None);
 
         Assert.Equal(userId, credentials.ResetUserId);
         Assert.Equal(userId, sessions.RevokedUserId);
@@ -75,8 +90,11 @@ public sealed class UserRoleServiceTests
 
         public Task<UserAccount?> ValidateCredentialsAsync(
             string userName,
-            string password,
+            string passwordHash,
             CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<string?> GetPasswordSaltAsync(string userName, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
 
         public Task<IReadOnlyList<UserAccount>> ListAsync(CancellationToken cancellationToken) =>
             throw new NotSupportedException();
@@ -95,10 +113,11 @@ public sealed class UserRoleServiceTests
     {
         public IReadOnlyCollection<string>? CreatedRoles { get; private set; }
         public Guid? ResetUserId { get; private set; }
+        public Guid? SetInitialPasswordUserId { get; private set; }
+        public string? SetInitialPasswordHash { get; private set; }
 
         public Task<UserAccount> CreateAsync(
             string userName,
-            string password,
             IReadOnlyCollection<string> roles,
             CancellationToken cancellationToken)
         {
@@ -106,15 +125,25 @@ public sealed class UserRoleServiceTests
             return Task.FromResult(new UserAccount(Guid.NewGuid(), userName, roles.ToArray()));
         }
 
+        public Task SetInitialPasswordAsync(
+            Guid userId,
+            string passwordHash,
+            CancellationToken cancellationToken)
+        {
+            SetInitialPasswordUserId = userId;
+            SetInitialPasswordHash = passwordHash;
+            return Task.CompletedTask;
+        }
+
         public Task<bool> ChangePasswordAsync(
             Guid userId,
-            string currentPassword,
-            string newPassword,
+            string currentPasswordHash,
+            string newPasswordHash,
             CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task ResetPasswordAsync(
             Guid userId,
-            string newPassword,
+            string newPasswordHash,
             CancellationToken cancellationToken)
         {
             ResetUserId = userId;

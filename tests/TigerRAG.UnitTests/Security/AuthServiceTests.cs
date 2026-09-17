@@ -13,7 +13,7 @@ public sealed class AuthServiceTests
         var sessions = new RecordingRefreshSessionDal(refresh);
         var service = CreateService(user, expected, sessions);
 
-        var result = await service.LoginAsync("admin", "correct-password", CancellationToken.None);
+        var result = await service.LoginAsync("admin", "client-md5-hash", CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Equal(user, result.User);
@@ -27,7 +27,7 @@ public sealed class AuthServiceTests
     {
         var service = CreateService(null, null, new RecordingRefreshSessionDal(null));
 
-        var result = await service.LoginAsync("admin", "wrong-password", CancellationToken.None);
+        var result = await service.LoginAsync("admin", "wrong-md5-hash", CancellationToken.None);
 
         Assert.Null(result);
     }
@@ -74,8 +74,8 @@ public sealed class AuthServiceTests
 
         var changed = await service.ChangePasswordAsync(
             userId,
-            "current-password",
-            "new-password-123",
+            "current-md5-hash",
+            "new-md5-hash",
             CancellationToken.None);
 
         Assert.True(changed);
@@ -96,8 +96,11 @@ public sealed class AuthServiceTests
     {
         public Task<UserAccount?> ValidateCredentialsAsync(
             string userName,
-            string password,
+            string passwordHash,
             CancellationToken cancellationToken) => Task.FromResult(user);
+
+        public Task<string?> GetPasswordSaltAsync(string userName, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
 
         public Task<IReadOnlyList<UserAccount>> ListAsync(CancellationToken cancellationToken) =>
             throw new NotSupportedException();
@@ -120,8 +123,8 @@ public sealed class AuthServiceTests
 
         public Task<bool> ChangePasswordAsync(
             Guid userId,
-            string currentPassword,
-            string newPassword,
+            string currentPasswordHash,
+            string newPasswordHash,
             CancellationToken cancellationToken)
         {
             ChangedUserId = userId;
@@ -130,13 +133,17 @@ public sealed class AuthServiceTests
 
         public Task<UserAccount> CreateAsync(
             string userName,
-            string password,
             IReadOnlyCollection<string> roles,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task SetInitialPasswordAsync(
+            Guid userId,
+            string passwordHash,
             CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task ResetPasswordAsync(
             Guid userId,
-            string newPassword,
+            string newPasswordHash,
             CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 

@@ -6,6 +6,12 @@ using TigerRAG.Infrastructure.Persistence;
 
 namespace TigerRAG.Infrastructure.Dal;
 
+/// <summary>
+/// 用户 DAL，同时实现 <see cref="IUserDal"/> 与 <see cref="IUserCredentialDal"/>。
+/// 所有凭据/角色写操作经 ASP.NET Core Identity 执行；变更走 diff 算法避免冗余 SQL。
+/// 客户端提交的 <c>passwordHash</c> = <c>MD5(password+salt)</c>，服务端再用 DB 中的 salt
+/// 拼接为 <c>salt:passwordHash</c> 后交给 Identity 的 PBKDF2 PasswordHasher 存储/校验。
+/// </summary>
 public sealed class UserDal(
     UserManager<AppUser> userManager,
     SignInManager<AppUser> signInManager,
@@ -14,18 +20,28 @@ public sealed class UserDal(
 {
     public async Task<UserAccount?> ValidateCredentialsAsync(
         string userName,
-        string password,
+        string passwordHash,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var user = await userManager.FindByNameAsync(userName);
-        if (user is null)
+        if (user is null || string.IsNullOrEmpty(user.PasswordSalt))
         {
+            // 用户不存在 / salt 为空都视作凭据无效，避免枚举。
             return null;
         }
 
-        var result = await signInManager.CheckPasswordSignInAsync(user, password, lockoutOnFailure: true);
+        // 把客户端 MD5 与服务端 salt 拼接后交给 Identity 走 PBKDF2；salt 永不离开服务端。
+        var combined = PasswordSalting.Combine(user.PasswordSalt, passwordHash);
+        var result = await signInManager.CheckPasswordSignInAsync(user, combined, lockoutOnFailure: true);
         return result.Succeeded ? await MapAsync(user) : null;
+    }
+
+    public async Task<string?> GetPasswordSaltAsync(string userName, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var user = await userManager.FindByNameAsync(userName);
+        return user is null || string.IsNullOrEmpty(user.PasswordSalt) ? null : user.PasswordSalt;
     }
 
     public async Task<IReadOnlyList<UserAccount>> ListAsync(CancellationToken cancellationToken)
@@ -69,16 +85,25 @@ public sealed class UserDal(
 
     public async Task<UserAccount> CreateAsync(
         string userName,
-        string password,
         IReadOnlyCollection<string> roles,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var user = new AppUser { Id = Guid.NewGuid(), UserName = userName };
-        EnsureSucceeded(await userManager.CreateAsync(user, password));
+        // Identity 要求 CreateAsync 必须传密码；此处先用一个随机占位密码占位。
+        // SetInitialPasswordAsync 会在客户端拿到 salt 后立刻把它替换成真实 PBKDF2 哈希。
+        var placeholder = PasswordSalting.GenerateSalt();
+        var user = new AppUser
+        {
+            Id = Guid.NewGuid(),
+            UserName = userName,
+            PasswordSalt = PasswordSalting.GenerateSalt(),
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        EnsureSucceeded(await userManager.CreateAsync(user, placeholder));
         var roleResult = await userManager.AddToRolesAsync(user, roles);
         if (!roleResult.Succeeded)
         {
+            // 角色分配失败则回滚已创建的用户，避免遗留无角色账号。
             await userManager.DeleteAsync(user);
             EnsureSucceeded(roleResult);
         }
@@ -86,31 +111,51 @@ public sealed class UserDal(
         return await MapAsync(user);
     }
 
-    public async Task<bool> ChangePasswordAsync(
+    public async Task SetInitialPasswordAsync(
         Guid userId,
-        string currentPassword,
-        string newPassword,
+        string passwordHash,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var user = await userManager.FindByIdAsync(userId.ToString())
             ?? throw new KeyNotFoundException($"User {userId} was not found.");
-        var result = await userManager.ChangePasswordAsync(user, currentPassword, newPassword);
+        var combined = PasswordSalting.Combine(user.PasswordSalt, passwordHash);
+        // 直接走 PasswordHasher + UpdateAsync；不借道密码重置 token，避免无谓的额外依赖（token provider）。
+        user.PasswordHash = userManager.PasswordHasher.HashPassword(user, combined);
+        EnsureSucceeded(await userManager.UpdateAsync(user));
+    }
+
+    public async Task<bool> ChangePasswordAsync(
+        Guid userId,
+        string currentPasswordHash,
+        string newPasswordHash,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var user = await userManager.FindByIdAsync(userId.ToString())
+            ?? throw new KeyNotFoundException($"User {userId} was not found.");
+        // 改密不轮换 salt；salt 与 MD5 哈希 拼接后交给 Identity，Identity 内部走 PBKDF2 校验/重哈希。
+        var currentCombined = PasswordSalting.Combine(user.PasswordSalt, currentPasswordHash);
+        var newCombined = PasswordSalting.Combine(user.PasswordSalt, newPasswordHash);
+        var result = await userManager.ChangePasswordAsync(user, currentCombined, newCombined);
         return result.Succeeded;
     }
 
     public async Task ResetPasswordAsync(
         Guid userId,
-        string newPassword,
+        string newPasswordHash,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var user = await userManager.FindByIdAsync(userId.ToString())
             ?? throw new KeyNotFoundException($"User {userId} was not found.");
-        var token = await userManager.GeneratePasswordResetTokenAsync(user);
-        EnsureSucceeded(await userManager.ResetPasswordAsync(user, token, newPassword));
+        var combined = PasswordSalting.Combine(user.PasswordSalt, newPasswordHash);
+        // 直接写 PasswordHasher 输出，与 ChangePasswordAsync / SetInitialPasswordAsync 同形。
+        user.PasswordHash = userManager.PasswordHasher.HashPassword(user, combined);
+        EnsureSucceeded(await userManager.UpdateAsync(user));
     }
 
+    // diff 算法：desired 与 current 取差集，仅生成必要的 INSERT/DELETE。
     internal static void ApplyRoleChanges(
         TigerRagDbContext dbContext,
         Guid userId,

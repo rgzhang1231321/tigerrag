@@ -1,4 +1,5 @@
 -- TigerRAG PostgreSQL 初始化脚本。
+-- 业务表名 = C# 实体类名（全小写 snake_case，PostgreSQL 通过双引号保留大小写）。
 -- 本脚本由维护人员手工执行，不依赖 EF Core Migration。
 
 BEGIN;
@@ -81,18 +82,18 @@ CREATE TABLE IF NOT EXISTS "AspNetUserTokens" (
         FOREIGN KEY ("UserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS "KnowledgeBases" (
+CREATE TABLE IF NOT EXISTS "knowledge_base_record" (
     "Id" uuid NOT NULL,
     "Name" character varying(200) NOT NULL,
     "Description" text,
     "OwnerId" uuid NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL,
-    CONSTRAINT "PK_KnowledgeBases" PRIMARY KEY ("Id"),
-    CONSTRAINT "FK_KnowledgeBases_AspNetUsers_OwnerId"
+    CONSTRAINT "PK_knowledge_base_record" PRIMARY KEY ("Id"),
+    CONSTRAINT "FK_knowledge_base_record_AspNetUsers_OwnerId"
         FOREIGN KEY ("OwnerId") REFERENCES "AspNetUsers" ("Id") ON DELETE RESTRICT
 );
 
-CREATE TABLE IF NOT EXISTS "Documents" (
+CREATE TABLE IF NOT EXISTS "document_record" (
     "Id" uuid NOT NULL,
     "KnowledgeBaseId" uuid NOT NULL,
     "FileName" character varying(500) NOT NULL,
@@ -103,14 +104,14 @@ CREATE TABLE IF NOT EXISTS "Documents" (
     "CreatedBy" uuid NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL,
     "UpdatedAt" timestamp with time zone NOT NULL,
-    CONSTRAINT "PK_Documents" PRIMARY KEY ("Id"),
-    CONSTRAINT "FK_Documents_AspNetUsers_CreatedBy"
+    CONSTRAINT "PK_document_record" PRIMARY KEY ("Id"),
+    CONSTRAINT "FK_document_record_AspNetUsers_CreatedBy"
         FOREIGN KEY ("CreatedBy") REFERENCES "AspNetUsers" ("Id") ON DELETE RESTRICT,
-    CONSTRAINT "FK_Documents_KnowledgeBases_KnowledgeBaseId"
-        FOREIGN KEY ("KnowledgeBaseId") REFERENCES "KnowledgeBases" ("Id") ON DELETE CASCADE
+    CONSTRAINT "FK_document_record_knowledge_base_record_KnowledgeBaseId"
+        FOREIGN KEY ("KnowledgeBaseId") REFERENCES "knowledge_base_record" ("Id") ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS "DocumentChunks" (
+CREATE TABLE IF NOT EXISTS "document_chunk_record" (
     "Id" uuid NOT NULL,
     "DocumentId" uuid NOT NULL,
     "Position" integer NOT NULL,
@@ -118,44 +119,44 @@ CREATE TABLE IF NOT EXISTS "DocumentChunks" (
     "Title" text,
     "Content" text NOT NULL,
     "SearchVector" tsvector,
-    CONSTRAINT "PK_DocumentChunks" PRIMARY KEY ("Id"),
-    CONSTRAINT "FK_DocumentChunks_Documents_DocumentId"
-        FOREIGN KEY ("DocumentId") REFERENCES "Documents" ("Id") ON DELETE CASCADE
+    CONSTRAINT "PK_document_chunk_record" PRIMARY KEY ("Id"),
+    CONSTRAINT "FK_document_chunk_record_document_record_DocumentId"
+        FOREIGN KEY ("DocumentId") REFERENCES "document_record" ("Id") ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS "DocumentPermissions" (
+CREATE TABLE IF NOT EXISTS "document_permission_record" (
     "DocumentId" uuid NOT NULL,
     "PrincipalType" character varying(16) NOT NULL,
     "PrincipalId" uuid NOT NULL,
-    CONSTRAINT "PK_DocumentPermissions" PRIMARY KEY ("DocumentId", "PrincipalType", "PrincipalId"),
-    CONSTRAINT "FK_DocumentPermissions_Documents_DocumentId"
-        FOREIGN KEY ("DocumentId") REFERENCES "Documents" ("Id") ON DELETE CASCADE
+    CONSTRAINT "PK_document_permission_record" PRIMARY KEY ("DocumentId", "PrincipalType", "PrincipalId"),
+    CONSTRAINT "FK_document_permission_record_document_record_DocumentId"
+        FOREIGN KEY ("DocumentId") REFERENCES "document_record" ("Id") ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS "Conversations" (
+CREATE TABLE IF NOT EXISTS "conversation_record" (
     "Id" uuid NOT NULL,
     "UserId" uuid NOT NULL,
     "Title" character varying(300) NOT NULL,
     "CreatedAt" timestamp with time zone NOT NULL,
     "LastMessageAt" timestamp with time zone NOT NULL,
-    CONSTRAINT "PK_Conversations" PRIMARY KEY ("Id"),
-    CONSTRAINT "FK_Conversations_AspNetUsers_UserId"
+    CONSTRAINT "PK_conversation_record" PRIMARY KEY ("Id"),
+    CONSTRAINT "FK_conversation_record_AspNetUsers_UserId"
         FOREIGN KEY ("UserId") REFERENCES "AspNetUsers" ("Id") ON DELETE RESTRICT
 );
 
-CREATE TABLE IF NOT EXISTS "Messages" (
+CREATE TABLE IF NOT EXISTS "message_record" (
     "Id" uuid NOT NULL,
     "ConversationId" uuid NOT NULL,
     "Role" character varying(32) NOT NULL,
     "Content" text NOT NULL,
     "TokenCount" integer,
     "CreatedAt" timestamp with time zone NOT NULL,
-    CONSTRAINT "PK_Messages" PRIMARY KEY ("Id"),
-    CONSTRAINT "FK_Messages_Conversations_ConversationId"
-        FOREIGN KEY ("ConversationId") REFERENCES "Conversations" ("Id") ON DELETE CASCADE
+    CONSTRAINT "PK_message_record" PRIMARY KEY ("Id"),
+    CONSTRAINT "FK_message_record_conversation_record_ConversationId"
+        FOREIGN KEY ("ConversationId") REFERENCES "conversation_record" ("Id") ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS "AuditLogs" (
+CREATE TABLE IF NOT EXISTS "audit_log_record" (
     "Id" uuid NOT NULL,
     "UserId" uuid NOT NULL,
     "Query" text NOT NULL,
@@ -163,20 +164,20 @@ CREATE TABLE IF NOT EXISTS "AuditLogs" (
     "Answer" text,
     "IpAddress" character varying(64),
     "CreatedAt" timestamp with time zone NOT NULL,
-    CONSTRAINT "PK_AuditLogs" PRIMARY KEY ("Id"),
-    CONSTRAINT "FK_AuditLogs_AspNetUsers_UserId"
+    CONSTRAINT "PK_audit_log_record" PRIMARY KEY ("Id"),
+    CONSTRAINT "FK_audit_log_record_AspNetUsers_UserId"
         FOREIGN KEY ("UserId") REFERENCES "AspNetUsers" ("Id") ON DELETE RESTRICT
 );
 
-CREATE TABLE IF NOT EXISTS "RefreshTokens" (
+CREATE TABLE IF NOT EXISTS "refresh_token_record" (
     "Id" uuid NOT NULL,
     "UserId" uuid NOT NULL,
     "TokenHash" character varying(64) NOT NULL,
     "ExpiresAt" timestamp with time zone NOT NULL,
     "RevokedAt" timestamp with time zone,
     "CreatedAt" timestamp with time zone NOT NULL,
-    CONSTRAINT "PK_RefreshTokens" PRIMARY KEY ("Id"),
-    CONSTRAINT "FK_RefreshTokens_AspNetUsers_UserId"
+    CONSTRAINT "PK_refresh_token_record" PRIMARY KEY ("Id"),
+    CONSTRAINT "FK_refresh_token_record_AspNetUsers_UserId"
         FOREIGN KEY ("UserId") REFERENCES "AspNetUsers" ("Id") ON DELETE CASCADE
 );
 
@@ -196,23 +197,23 @@ CREATE INDEX IF NOT EXISTS "IX_AspNetUserLogins_UserId" ON "AspNetUserLogins" ("
 CREATE INDEX IF NOT EXISTS "IX_AspNetUserRoles_RoleId" ON "AspNetUserRoles" ("RoleId");
 CREATE INDEX IF NOT EXISTS "EmailIndex" ON "AspNetUsers" ("NormalizedEmail");
 CREATE UNIQUE INDEX IF NOT EXISTS "UserNameIndex" ON "AspNetUsers" ("NormalizedUserName");
-CREATE INDEX IF NOT EXISTS "IX_AuditLogs_CreatedAt" ON "AuditLogs" ("CreatedAt");
-CREATE INDEX IF NOT EXISTS "IX_AuditLogs_UserId" ON "AuditLogs" ("UserId");
-CREATE INDEX IF NOT EXISTS "IX_Conversations_UserId" ON "Conversations" ("UserId");
-CREATE UNIQUE INDEX IF NOT EXISTS "IX_DocumentChunks_DocumentId_Position"
-    ON "DocumentChunks" ("DocumentId", "Position");
-CREATE INDEX IF NOT EXISTS "IX_DocumentChunks_SearchVector"
-    ON "DocumentChunks" USING GIN ("SearchVector");
-CREATE INDEX IF NOT EXISTS "IX_DocumentPermissions_PrincipalType_PrincipalId"
-    ON "DocumentPermissions" ("PrincipalType", "PrincipalId");
-CREATE INDEX IF NOT EXISTS "IX_Documents_CreatedBy" ON "Documents" ("CreatedBy");
-CREATE INDEX IF NOT EXISTS "IX_Documents_KnowledgeBaseId_Status"
-    ON "Documents" ("KnowledgeBaseId", "Status");
-CREATE INDEX IF NOT EXISTS "IX_KnowledgeBases_OwnerId" ON "KnowledgeBases" ("OwnerId");
-CREATE INDEX IF NOT EXISTS "IX_Messages_ConversationId_CreatedAt"
-    ON "Messages" ("ConversationId", "CreatedAt");
-CREATE UNIQUE INDEX IF NOT EXISTS "IX_RefreshTokens_TokenHash" ON "RefreshTokens" ("TokenHash");
-CREATE INDEX IF NOT EXISTS "IX_RefreshTokens_UserId_RevokedAt"
-    ON "RefreshTokens" ("UserId", "RevokedAt");
+CREATE INDEX IF NOT EXISTS "IX_audit_log_record_CreatedAt" ON "audit_log_record" ("CreatedAt");
+CREATE INDEX IF NOT EXISTS "IX_audit_log_record_UserId" ON "audit_log_record" ("UserId");
+CREATE INDEX IF NOT EXISTS "IX_conversation_record_UserId" ON "conversation_record" ("UserId");
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_document_chunk_record_DocumentId_Position"
+    ON "document_chunk_record" ("DocumentId", "Position");
+CREATE INDEX IF NOT EXISTS "IX_document_chunk_record_SearchVector"
+    ON "document_chunk_record" USING GIN ("SearchVector");
+CREATE INDEX IF NOT EXISTS "IX_document_permission_record_PrincipalType_PrincipalId"
+    ON "document_permission_record" ("PrincipalType", "PrincipalId");
+CREATE INDEX IF NOT EXISTS "IX_document_record_CreatedBy" ON "document_record" ("CreatedBy");
+CREATE INDEX IF NOT EXISTS "IX_document_record_KnowledgeBaseId_Status"
+    ON "document_record" ("KnowledgeBaseId", "Status");
+CREATE INDEX IF NOT EXISTS "IX_knowledge_base_record_OwnerId" ON "knowledge_base_record" ("OwnerId");
+CREATE INDEX IF NOT EXISTS "IX_message_record_ConversationId_CreatedAt"
+    ON "message_record" ("ConversationId", "CreatedAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_refresh_token_record_TokenHash" ON "refresh_token_record" ("TokenHash");
+CREATE INDEX IF NOT EXISTS "IX_refresh_token_record_UserId_RevokedAt"
+    ON "refresh_token_record" ("UserId", "RevokedAt");
 
 COMMIT;

@@ -43,12 +43,12 @@ public sealed class InfrastructureRegistrationTests
         var entityTypes = context.Model.GetEntityTypes().Select(type => type.ClrType).ToArray();
 
         Assert.Contains(typeof(AppUser), entityTypes);
-        Assert.Contains(typeof(KnowledgeBaseRecord), entityTypes);
-        Assert.Contains(typeof(DocumentRecord), entityTypes);
-        Assert.Contains(typeof(DocumentPermissionRecord), entityTypes);
-        Assert.Contains(typeof(ConversationRecord), entityTypes);
-        Assert.Contains(typeof(MessageRecord), entityTypes);
-        Assert.Contains(typeof(AuditLogRecord), entityTypes);
+        Assert.Contains(typeof(knowledge_base_record), entityTypes);
+        Assert.Contains(typeof(document_record), entityTypes);
+        Assert.Contains(typeof(document_permission_record), entityTypes);
+        Assert.Contains(typeof(conversation_record), entityTypes);
+        Assert.Contains(typeof(message_record), entityTypes);
+        Assert.Contains(typeof(audit_log_record), entityTypes);
     }
 
     private static IConfiguration CreateConfiguration() => new ConfigurationBuilder()

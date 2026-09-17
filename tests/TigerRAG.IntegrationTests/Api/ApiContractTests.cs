@@ -109,7 +109,7 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
         var response = await client.PostAsJsonAsync("/api/auth/login", new
         {
             userName = "editor",
-            password = "correct-password"
+            passwordHash = "client-md5-hash"
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -168,8 +168,8 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
 
         var response = await client.PostAsJsonAsync("/api/auth/change-password", new
         {
-            currentPassword = "current-password",
-            newPassword = "new-password-123"
+            currentPasswordHash = "current-md5-hash",
+            newPasswordHash = "new-md5-hash"
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -185,7 +185,7 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
         var response = await client.PostAsJsonAsync("/api/auth/login", new
         {
             userName = "missing",
-            password = "wrong-password"
+            passwordHash = "wrong-md5-hash"
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -201,7 +201,7 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
         var response = await client.PostAsJsonAsync("/api/auth/login", new
         {
             userName = "missing",
-            password = "wrong-password"
+            passwordHash = "wrong-md5-hash"
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -277,7 +277,7 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
     }
 
     [Fact]
-    public async Task UserManagement_ForAdmin_CreatesUser()
+    public async Task UserManagement_ForAdmin_CreatesUserThenSetsInitialPassword()
     {
         var admin = new UserAccount(Guid.NewGuid(), "admin", [SystemRoles.Admin]);
         var credentials = new StubUserCredentialDal();
@@ -285,16 +285,24 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await LoginAsync(client, admin.UserName));
 
-        var response = await client.PostAsJsonAsync("/api/users", new
+        var createResponse = await client.PostAsJsonAsync("/api/users", new
         {
             userName = "new-editor",
-            password = "initial-password",
             roles = new[] { SystemRoles.Editor }
         });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
         Assert.Equal("new-editor", credentials.CreatedUserName);
         Assert.Equal([SystemRoles.Editor], credentials.CreatedRoles);
+        Assert.NotNull(credentials.LastCreatedUserId);
+
+        var setPasswordResponse = await client.PutAsJsonAsync(
+            $"/api/users/{credentials.LastCreatedUserId}/initial-password",
+            new { passwordHash = "initial-md5-hash" });
+
+        Assert.Equal(HttpStatusCode.OK, setPasswordResponse.StatusCode);
+        Assert.Equal(credentials.LastCreatedUserId, credentials.SetInitialPasswordUserId);
+        Assert.Equal("initial-md5-hash", credentials.SetInitialPasswordHash);
     }
 
     [Fact]
@@ -309,7 +317,7 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
 
         var response = await client.PutAsJsonAsync($"/api/users/{targetUserId}/password", new
         {
-            newPassword = "temporary-password"
+            passwordHash = "temporary-md5-hash"
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -435,21 +443,24 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
         var response = await client.PostAsJsonAsync("/api/auth/login", new
         {
             userName,
-            password = "correct-password"
+            passwordHash = "client-md5-hash"
         });
         response.EnsureSuccessStatusCode();
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return body.RootElement.GetProperty("data").GetProperty("accessToken").GetString()!;
     }
 
-    private sealed class StubUserDal(UserAccount? loginUser) : IUserDal
+    private sealed class StubUserDal(UserAccount? loginUser, string? salt = null) : IUserDal
     {
         public IReadOnlyCollection<string>? AssignedRoles { get; private set; }
 
         public Task<UserAccount?> ValidateCredentialsAsync(
             string userName,
-            string password,
+            string passwordHash,
             CancellationToken cancellationToken) => Task.FromResult(loginUser);
+
+        public Task<string?> GetPasswordSaltAsync(string userName, CancellationToken cancellationToken) =>
+            Task.FromResult(salt);
 
         public Task<IReadOnlyList<UserAccount>> ListAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<UserAccount>>(loginUser is null ? [] : [loginUser]);
@@ -468,8 +479,11 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
     {
         public Task<UserAccount?> ValidateCredentialsAsync(
             string userName,
-            string password,
+            string passwordHash,
             CancellationToken cancellationToken) => Task.FromResult<UserAccount?>(loginUser);
+
+        public Task<string?> GetPasswordSaltAsync(string userName, CancellationToken cancellationToken) =>
+            Task.FromResult<string?>(null);
 
         public Task<IReadOnlyList<UserAccount>> ListAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<UserAccount>>([loginUser]);
@@ -514,23 +528,37 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
         public Guid? ChangedUserId { get; private set; }
         public string? CreatedUserName { get; private set; }
         public IReadOnlyCollection<string>? CreatedRoles { get; private set; }
+        public Guid? LastCreatedUserId { get; private set; }
         public Guid? ResetUserId { get; private set; }
+        public Guid? SetInitialPasswordUserId { get; private set; }
+        public string? SetInitialPasswordHash { get; private set; }
 
         public Task<UserAccount> CreateAsync(
             string userName,
-            string password,
             IReadOnlyCollection<string> roles,
             CancellationToken cancellationToken)
         {
             CreatedUserName = userName;
             CreatedRoles = roles;
-            return Task.FromResult(new UserAccount(Guid.NewGuid(), userName, roles.ToArray()));
+            var user = new UserAccount(Guid.NewGuid(), userName, roles.ToArray());
+            LastCreatedUserId = user.Id;
+            return Task.FromResult(user);
+        }
+
+        public Task SetInitialPasswordAsync(
+            Guid userId,
+            string passwordHash,
+            CancellationToken cancellationToken)
+        {
+            SetInitialPasswordUserId = userId;
+            SetInitialPasswordHash = passwordHash;
+            return Task.CompletedTask;
         }
 
         public Task<bool> ChangePasswordAsync(
             Guid userId,
-            string currentPassword,
-            string newPassword,
+            string currentPasswordHash,
+            string newPasswordHash,
             CancellationToken cancellationToken)
         {
             ChangedUserId = userId;
@@ -539,7 +567,7 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
 
         public Task ResetPasswordAsync(
             Guid userId,
-            string newPassword,
+            string newPasswordHash,
             CancellationToken cancellationToken)
         {
             ResetUserId = userId;

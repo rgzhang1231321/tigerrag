@@ -2,7 +2,8 @@ using TigerRAG.Domain.Documents;
 
 namespace TigerRAG.Infrastructure.Persistence.Entities;
 
-public sealed class DocumentRecord
+/// <summary>文档持久化记录。Status 以字符串形式入库，便于手工排查；状态机不变量由 Domain 保证。</summary>
+public sealed class document_record
 {
     public Guid Id { get; set; }
     public Guid KnowledgeBaseId { get; set; }

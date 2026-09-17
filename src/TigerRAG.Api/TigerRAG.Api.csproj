@@ -15,4 +15,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="TigerRAG.IntegrationTests" />
+  </ItemGroup>
+
 </Project>

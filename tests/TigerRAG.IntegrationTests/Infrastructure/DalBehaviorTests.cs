@@ -15,7 +15,7 @@ public sealed class DalBehaviorTests
         var documentId = Guid.NewGuid();
         var existingUserId = Guid.NewGuid();
         var newRoleId = Guid.NewGuid();
-        var existing = new DocumentPermissionRecord
+        var existing = new document_permission_record
         {
             DocumentId = documentId,
             PrincipalType = PermissionPrincipalType.User,
@@ -31,7 +31,7 @@ public sealed class DalBehaviorTests
             [newRoleId]);
 
         Assert.Equal(EntityState.Unchanged, context.Entry(existing).State);
-        Assert.Single(context.ChangeTracker.Entries<DocumentPermissionRecord>(),
+        Assert.Single(context.ChangeTracker.Entries<document_permission_record>(),
             entry => entry.State == EntityState.Added && entry.Entity.PrincipalId == newRoleId);
     }
 

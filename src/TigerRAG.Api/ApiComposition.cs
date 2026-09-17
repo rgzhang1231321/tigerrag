@@ -1,9 +1,12 @@
+using TigerRAG.Api.Filters;
 using TigerRAG.Api.Hubs;
+using TigerRAG.Api.Middleware;
 using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using TigerRAG.Application.Security;
+using TigerRAG.Infrastructure.Logging;
 
 namespace TigerRAG.Api;
 
@@ -22,6 +25,10 @@ public static class ApiComposition
         services.AddProblemDetails();
         services.AddHealthChecks();
         services.AddSignalR();
+        // IExceptionHandler 由 UseExceptionHandler() 自动发现并按注册顺序调用；
+        // 返回 false 让默认 ProblemDetails 写入继续走，最终被 ApiResponseMiddleware 包成 ApiResponse。
+        services.AddExceptionHandler<LoggingExceptionHandler>();
+        services.AddHostedService<ApiLogFlusherService>();
         services
             .AddControllers(options => options.Filters.Add<ApiResponseFilter>())
             .AddJsonOptions(options =>
@@ -54,6 +61,7 @@ public static class ApiComposition
 
     public static WebApplication MapTigerRagApi(this WebApplication app)
     {
+        app.UseMiddleware<RequestIdMiddleware>();
         app.UseExceptionHandler();
         app.UseMiddleware<ApiResponseMiddleware>();
 

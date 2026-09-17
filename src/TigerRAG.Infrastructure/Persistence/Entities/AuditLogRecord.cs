@@ -1,6 +1,7 @@
 namespace TigerRAG.Infrastructure.Persistence.Entities;
 
-public sealed class AuditLogRecord
+/// <summary>审计日志持久化记录。<see cref="Query"/> / <see cref="Answer"/> 用于问答审计回放。</summary>
+public sealed class audit_log_record
 {
     public Guid Id { get; set; }
     public Guid UserId { get; set; }

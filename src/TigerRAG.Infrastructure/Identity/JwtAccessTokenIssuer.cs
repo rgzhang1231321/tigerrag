@@ -7,11 +7,13 @@ using TigerRAG.Application.Security;
 
 namespace TigerRAG.Infrastructure.Identity;
 
+/// <summary>JWT 签发器实现。基于 HS256 对称密钥；密钥长度不达标时 fail-fast。</summary>
 public sealed class JwtAccessTokenIssuer(IOptions<JwtOptions> options) : IAccessTokenIssuer
 {
     public AccessToken Issue(UserAccount user)
     {
         var settings = options.Value;
+        // HS256 安全基线：密钥 ≥ 32 字节；启动期 AddTigerRagApi 已校验，运行时再保底一次。
         if (Encoding.UTF8.GetByteCount(settings.SigningKey) < 32)
         {
             throw new InvalidOperationException("Jwt:SigningKey must contain at least 32 bytes.");

@@ -11,6 +11,7 @@ using TigerRAG.Infrastructure.Persistence.Entities;
 
 namespace TigerRAG.Infrastructure.Dal;
 
+/// <summary>刷新令牌会话 DAL。原值只出现在 Cookie，库内仅存 SHA-256 哈希。</summary>
 public sealed class RefreshSessionDal(
     TigerRagDbContext dbContext,
     UserManager<AppUser> userManager,
@@ -43,6 +44,7 @@ public sealed class RefreshSessionDal(
             return null;
         }
 
+        // 原子轮换：原会话立即撤销，再签发新会话，避免并发请求复用旧令牌。
         current.RevokedAt = now;
         var replacement = NewToken();
         dbContext.RefreshTokens.Add(Record(user.Id, replacement));
@@ -82,7 +84,7 @@ public sealed class RefreshSessionDal(
         Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32)),
         DateTimeOffset.UtcNow.AddDays(options.Value.LifetimeDays));
 
-    private static RefreshTokenRecord Record(Guid userId, RefreshToken token) => new()
+    private static refresh_token_record Record(Guid userId, RefreshToken token) => new()
     {
         Id = Guid.NewGuid(),
         UserId = userId,
@@ -91,6 +93,7 @@ public sealed class RefreshSessionDal(
         CreatedAt = DateTimeOffset.UtcNow
     };
 
+    // 哈希而非加密：哈希不可逆，泄露库也不会让持有者伪造会话。
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 }

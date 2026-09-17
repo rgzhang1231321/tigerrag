@@ -29,7 +29,8 @@ describe('TigerRAG authentication shell', () => {
 
   it('logs in and keeps the access token in memory', async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce(jsonResponse(envelope(null, 401, '未授权'), true))
+      .mockResolvedValueOnce(jsonResponse(envelope(null, false, '未授权'), true))
+      .mockResolvedValueOnce(jsonResponse(envelope({ salt: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' })))
       .mockResolvedValueOnce(jsonResponse(envelope(session)))
     await renderApp()
 
@@ -75,6 +76,15 @@ function jsonResponse(body: unknown, ok = true, status = 200) {
   return { ok, status, json: async () => body } as Response
 }
 
-function envelope<T>(data: T, code = 0, message = 'success') {
-  return { code, message, data }
+function envelope<T>(data: T, flag = true, message = 'success') {
+  return {
+    requestId: '',
+    code: 0,
+    value: flag ? 'Success' : 'Unauthorized',
+    flag,
+    message,
+    data,
+    hasNextPage: false,
+    total: 0,
+  }
 }

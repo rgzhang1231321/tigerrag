@@ -5,6 +5,7 @@ using TigerRAG.Infrastructure.Persistence.Entities;
 
 namespace TigerRAG.Infrastructure.Dal;
 
+/// <summary>文档级 ACL DAL。权限范围 = KB 拥有者所属文档 ∪ 用户 ACL ∪ 角色 ACL（取并集）。</summary>
 public sealed class DocumentAccessDal(TigerRagDbContext dbContext) : IDocumentAccessDal
 {
     public async Task<IReadOnlyList<Guid>> GetAccessibleDocumentIdsAsync(
@@ -28,6 +29,7 @@ public sealed class DocumentAccessDal(TigerRagDbContext dbContext) : IDocumentAc
                 permission.PrincipalType == PermissionPrincipalType.Role && roleIds.Contains(permission.PrincipalId))
             .Select(permission => permission.DocumentId);
 
+        // 去重交给 Postgres Union；调用方再合并成 DocumentAccessScope。
         return await ownedDocuments.Union(permittedDocuments).ToListAsync(cancellationToken);
     }
 
@@ -54,6 +56,7 @@ public sealed class DocumentAccessDal(TigerRagDbContext dbContext) : IDocumentAc
 
         if (!isAdmin && ownerId != actorId)
         {
+            // 资源级授权：仅 KB 拥有者或 Admin 可修改 ACL。
             throw new UnauthorizedAccessException("Only the knowledge base owner can change document permissions.");
         }
 
@@ -84,10 +87,11 @@ public sealed class DocumentAccessDal(TigerRagDbContext dbContext) : IDocumentAc
     internal static void ApplyPermissionChanges(
         TigerRagDbContext dbContext,
         Guid documentId,
-        IReadOnlyCollection<DocumentPermissionRecord> currentPermissions,
+        IReadOnlyCollection<document_permission_record> currentPermissions,
         IReadOnlyCollection<Guid> userIds,
         IReadOnlyCollection<Guid> roleIds)
     {
+        // 整体替换：删除不再需要的主体，追加新增主体；幂等。
         var desired = userIds
             .Select(userId => (PermissionPrincipalType.User, userId))
             .Concat(roleIds.Select(roleId => (PermissionPrincipalType.Role, roleId)))
@@ -103,7 +107,7 @@ public sealed class DocumentAccessDal(TigerRagDbContext dbContext) : IDocumentAc
             .Select(principal => Permission(documentId, principal.Item1, principal.Item2)));
     }
 
-    private static DocumentPermissionRecord Permission(
+    private static document_permission_record Permission(
         Guid documentId,
         PermissionPrincipalType principalType,
         Guid principalId) => new()

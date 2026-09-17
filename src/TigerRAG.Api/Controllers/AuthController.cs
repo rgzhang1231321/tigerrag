@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using TigerRAG.Api.Common;
 using TigerRAG.Application.Security;
 
 namespace TigerRAG.Api.Controllers;
@@ -13,9 +14,28 @@ public sealed class AuthController(AuthService authService) : ControllerBase
     private const string RefreshCookieName = "tigerrag.refresh";
 
     /// <summary>
-    /// 使用用户名和密码登录，返回访问令牌，并通过 HttpOnly Cookie 写入刷新令牌。
+    /// 取用户的密码 salt（用于客户端计算 <c>MD5(password+salt)</c>）；用户不存在时返回 404。
+    /// salt 不构成机密，仅用于抗离线暴力；返回 404 仅提示用户名是否存在，与登录失败时的统一错误分开。
     /// </summary>
-    /// <param name="request">登录用户名和密码。</param>
+    [AllowAnonymous]
+    [HttpGet("salt")]
+    public async Task<ActionResult<ApiResponse<SaltResponse>>> GetSalt(
+        [FromQuery] string userName,
+        CancellationToken cancellationToken)
+    {
+        var salt = await authService.GetSaltAsync(userName, cancellationToken);
+        if (salt is null)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, "用户不存在"));
+        }
+
+        return Ok(ApiResponse.Success(new SaltResponse(salt)));
+    }
+
+    /// <summary>
+    /// 使用用户名与客户端 <c>MD5(password+salt)</c> 登录；返回访问令牌，并通过 HttpOnly Cookie 写入刷新令牌。
+    /// </summary>
+    /// <param name="request">登录用户名与客户端计算好的密码哈希。</param>
     /// <param name="cancellationToken">用于取消当前请求的令牌。</param>
     /// <returns>登录成功时返回访问令牌和当前用户信息；凭据无效时返回非零业务码。</returns>
     [AllowAnonymous]
@@ -24,10 +44,10 @@ public sealed class AuthController(AuthService authService) : ControllerBase
         LoginRequest request,
         CancellationToken cancellationToken)
     {
-        var result = await authService.LoginAsync(request.UserName, request.Password, cancellationToken);
+        var result = await authService.LoginAsync(request.UserName, request.PasswordHash, cancellationToken);
         if (result is null)
         {
-            return Ok(ApiResponse<object?>.Failure(ApiErrorCodes.Unauthorized, "用户名或密码错误"));
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "用户名或密码错误"));
         }
 
         SetRefreshCookie(result.RefreshToken);
@@ -45,14 +65,14 @@ public sealed class AuthController(AuthService authService) : ControllerBase
     {
         if (!Request.Cookies.TryGetValue(RefreshCookieName, out var refreshToken))
         {
-            return Ok(ApiResponse<object?>.Failure(ApiErrorCodes.Unauthorized, "缺少刷新令牌"));
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "缺少刷新令牌"));
         }
 
         var result = await authService.RefreshAsync(refreshToken, cancellationToken);
         if (result is null)
         {
             DeleteRefreshCookie();
-            return Ok(ApiResponse<object?>.Failure(ApiErrorCodes.Unauthorized, "刷新令牌无效或已过期"));
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "刷新令牌无效或已过期"));
         }
 
         SetRefreshCookie(result.RefreshToken);
@@ -79,10 +99,11 @@ public sealed class AuthController(AuthService authService) : ControllerBase
 
     /// <summary>
     /// 修改当前登录用户的密码，并撤销该用户的全部刷新会话。
+    /// 当前与新密码均为客户端按 <c>MD5(password+salt)</c> 计算后的哈希。
     /// </summary>
-    /// <param name="request">当前密码和符合安全要求的新密码。</param>
+    /// <param name="request">当前密码哈希与新密码哈希。</param>
     /// <param name="cancellationToken">用于取消当前请求的令牌。</param>
-    /// <returns>修改成功时返回空数据；当前密码错误或新密码不合规时返回非零业务码。</returns>
+    /// <returns>修改成功时返回空数据；当前密码错误时返回非零业务码。</returns>
     [Authorize]
     [HttpPost("change-password")]
     public async Task<IActionResult> ChangePassword(
@@ -91,17 +112,17 @@ public sealed class AuthController(AuthService authService) : ControllerBase
     {
         if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
         {
-            return Ok(ApiResponse<object?>.Failure(ApiErrorCodes.Unauthorized, "用户身份无效"));
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "用户身份无效"));
         }
 
         var changed = await authService.ChangePasswordAsync(
             userId,
-            request.CurrentPassword,
-            request.NewPassword,
+            request.CurrentPasswordHash,
+            request.NewPasswordHash,
             cancellationToken);
         if (!changed)
         {
-            return Ok(ApiResponse<object?>.Failure(ApiErrorCodes.Validation, "当前密码错误或新密码不符合要求"));
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation, "当前密码错误或新密码不符合要求"));
         }
 
         DeleteRefreshCookie();
@@ -129,9 +150,11 @@ public sealed class AuthController(AuthService authService) : ControllerBase
     };
 }
 
+public sealed record SaltResponse(string Salt);
+
 public sealed record LoginRequest(
     [Required] string UserName,
-    [Required] string Password);
+    [Required] string PasswordHash);
 
 public sealed record LoginResponse(
     string AccessToken,
@@ -139,5 +162,5 @@ public sealed record LoginResponse(
     UserResponse User);
 
 public sealed record ChangePasswordRequest(
-    [Required] string CurrentPassword,
-    [Required, MinLength(10)] string NewPassword);
+    [Required] string CurrentPasswordHash,
+    [Required] string NewPasswordHash);

@@ -1,7 +1,9 @@
 namespace TigerRAG.Application.Security;
 
+/// <summary>文档级访问范围计算服务。Admin 直接全放；其他角色合并 KB 拥有者、用户 ACL、角色 ACL。</summary>
 public sealed class DocumentAccessService(IDocumentAccessDal documentAccess)
 {
+    /// <summary>计算当前用户可见的文档 ID 集合；Admin 短路返回 <c>AllDocuments=true</c>。</summary>
     public async Task<DocumentAccessScope> GetScopeAsync(
         Guid userId,
         IReadOnlyCollection<string> roles,
@@ -19,6 +21,7 @@ public sealed class DocumentAccessService(IDocumentAccessDal documentAccess)
         return new DocumentAccessScope(false, documentIds);
     }
 
+    /// <summary>替换文档 ACL；仅 Admin 或 KB 拥有者可调用，由 DAL 内部校验。</summary>
     public Task ReplacePermissionsAsync(
         Guid documentId,
         Guid actorId,

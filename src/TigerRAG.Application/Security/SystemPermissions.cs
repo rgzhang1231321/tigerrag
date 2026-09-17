@@ -1,5 +1,6 @@
 namespace TigerRAG.Application.Security;
 
+/// <summary>权限代码常量与集合；Controller 通过 Policy 名引用，RolePermissionMap 完成角色 → 权限的展开。</summary>
 public static class SystemPermissions
 {
     public const string ManageUsers = "users.manage";

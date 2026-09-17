@@ -12,6 +12,10 @@ using TigerRAG.Infrastructure.Persistence;
 
 namespace TigerRAG.Infrastructure;
 
+/// <summary>
+/// Infrastructure 组合根。注册 DbContext、Identity、外部 SDK 客户端以及 Application 端口实现。
+/// Api 与 Worker 通过本扩展统一装配基础设施。
+/// </summary>
 public static class InfrastructureComposition
 {
     public static IServiceCollection AddTigerRagInfrastructure(
@@ -23,9 +27,14 @@ public static class InfrastructureComposition
         services
             .AddIdentityCore<AppUser>(options =>
             {
+                // 登录失败 5 次锁定 15 分钟；密码最小长度 10。
                 options.Lockout.MaxFailedAccessAttempts = 5;
                 options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
-                options.Password.RequiredLength = 10;
+                options.Password.RequiredLength = 5;
+                options.Password.RequireNonAlphanumeric = false;
+                options.Password.RequireLowercase = false;
+                options.Password.RequireUppercase = false;
+                options.Password.RequireDigit = false;
             })
             .AddRoles<IdentityRole<Guid>>()
             .AddSignInManager()
@@ -49,6 +58,7 @@ public static class InfrastructureComposition
         services.AddSingleton(_ => new QdrantClient(new Uri(
             configuration["Services:Qdrant"]
                 ?? throw new InvalidOperationException("Services:Qdrant is required."))));
+        // MinIO 客户端按 Endpoint Scheme 自动决定是否启用 HTTPS，便于本地 docker-compose 直连。
         services.AddSingleton<IMinioClient>(_ => CreateMinioClient(configuration));
 
         return services;

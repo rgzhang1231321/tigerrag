@@ -7,23 +7,31 @@ using TigerRAG.Infrastructure.Persistence.Entities;
 
 namespace TigerRAG.Infrastructure.Persistence;
 
+/// <summary>
+/// TigerRAG 主 DbContext。仅运行时 ORM，不引入 EF Migration；DDL 由 deploy/sql/ 维护。
+/// </summary>
 public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> options)
     : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>(options)
 {
-    public DbSet<KnowledgeBaseRecord> KnowledgeBases => Set<KnowledgeBaseRecord>();
-    public DbSet<DocumentRecord> Documents => Set<DocumentRecord>();
-    public DbSet<DocumentPermissionRecord> DocumentPermissions => Set<DocumentPermissionRecord>();
-    public DbSet<DocumentChunkRecord> DocumentChunks => Set<DocumentChunkRecord>();
-    public DbSet<ConversationRecord> Conversations => Set<ConversationRecord>();
-    public DbSet<MessageRecord> Messages => Set<MessageRecord>();
-    public DbSet<AuditLogRecord> AuditLogs => Set<AuditLogRecord>();
-    public DbSet<RefreshTokenRecord> RefreshTokens => Set<RefreshTokenRecord>();
+    public DbSet<knowledge_base_record> KnowledgeBases => Set<knowledge_base_record>();
+    public DbSet<document_record> Documents => Set<document_record>();
+    public DbSet<document_permission_record> DocumentPermissions => Set<document_permission_record>();
+    public DbSet<document_chunk_record> DocumentChunks => Set<document_chunk_record>();
+    public DbSet<conversation_record> Conversations => Set<conversation_record>();
+    public DbSet<message_record> Messages => Set<message_record>();
+    public DbSet<audit_log_record> AuditLogs => Set<audit_log_record>();
+    public DbSet<refresh_token_record> RefreshTokens => Set<refresh_token_record>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
 
-        builder.Entity<AppUser>().Property(user => user.CreatedAt).IsRequired();
+        // 业务表名 = 实体类名（EF Core 默认约定），确保代码与数据库一一对应。
+        builder.Entity<AppUser>(entity =>
+        {
+            entity.Property(user => user.PasswordSalt).HasMaxLength(64).IsRequired();
+            entity.Property(user => user.CreatedAt).IsRequired();
+        });
 
         ConfigureKnowledge(builder);
         ConfigureConversations(builder);
@@ -34,37 +42,37 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
 
     private static void ConfigureKnowledge(ModelBuilder builder)
     {
-        builder.Entity<KnowledgeBaseRecord>(entity =>
+        builder.Entity<knowledge_base_record>(entity =>
         {
-            entity.ToTable("KnowledgeBases");
+            entity.ToTable("knowledge_base_record");
             entity.Property(value => value.Name).HasMaxLength(200);
             entity.HasOne<AppUser>().WithMany().HasForeignKey(value => value.OwnerId).OnDelete(DeleteBehavior.Restrict);
         });
 
-        builder.Entity<DocumentRecord>(entity =>
+        builder.Entity<document_record>(entity =>
         {
-            entity.ToTable("Documents");
+            entity.ToTable("document_record");
             entity.Property(value => value.FileName).HasMaxLength(500);
             entity.Property(value => value.StoragePath).HasMaxLength(1000);
             entity.Property(value => value.Status).HasConversion<string>().HasMaxLength(32);
-            entity.HasOne<KnowledgeBaseRecord>().WithMany().HasForeignKey(value => value.KnowledgeBaseId);
+            entity.HasOne<knowledge_base_record>().WithMany().HasForeignKey(value => value.KnowledgeBaseId);
             entity.HasOne<AppUser>().WithMany().HasForeignKey(value => value.CreatedBy).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(value => new { value.KnowledgeBaseId, value.Status });
         });
 
-        builder.Entity<DocumentPermissionRecord>(entity =>
+        builder.Entity<document_permission_record>(entity =>
         {
-            entity.ToTable("DocumentPermissions");
+            entity.ToTable("document_permission_record");
             entity.HasKey(value => new { value.DocumentId, value.PrincipalType, value.PrincipalId });
             entity.Property(value => value.PrincipalType).HasConversion<string>().HasMaxLength(16);
-            entity.HasOne<DocumentRecord>().WithMany().HasForeignKey(value => value.DocumentId);
+            entity.HasOne<document_record>().WithMany().HasForeignKey(value => value.DocumentId);
             entity.HasIndex(value => new { value.PrincipalType, value.PrincipalId });
         });
 
-        builder.Entity<DocumentChunkRecord>(entity =>
+        builder.Entity<document_chunk_record>(entity =>
         {
-            entity.ToTable("DocumentChunks");
-            entity.HasOne<DocumentRecord>().WithMany().HasForeignKey(value => value.DocumentId);
+            entity.ToTable("document_chunk_record");
+            entity.HasOne<document_record>().WithMany().HasForeignKey(value => value.DocumentId);
             entity.HasIndex(value => new { value.DocumentId, value.Position }).IsUnique();
             entity.HasIndex(value => value.SearchVector).HasMethod("GIN");
         });
@@ -72,27 +80,27 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
 
     private static void ConfigureConversations(ModelBuilder builder)
     {
-        builder.Entity<ConversationRecord>(entity =>
+        builder.Entity<conversation_record>(entity =>
         {
-            entity.ToTable("Conversations");
+            entity.ToTable("conversation_record");
             entity.Property(value => value.Title).HasMaxLength(300);
             entity.HasOne<AppUser>().WithMany().HasForeignKey(value => value.UserId).OnDelete(DeleteBehavior.Restrict);
         });
 
-        builder.Entity<MessageRecord>(entity =>
+        builder.Entity<message_record>(entity =>
         {
-            entity.ToTable("Messages");
+            entity.ToTable("message_record");
             entity.Property(value => value.Role).HasMaxLength(32);
-            entity.HasOne<ConversationRecord>().WithMany().HasForeignKey(value => value.ConversationId);
+            entity.HasOne<conversation_record>().WithMany().HasForeignKey(value => value.ConversationId);
             entity.HasIndex(value => new { value.ConversationId, value.CreatedAt });
         });
     }
 
     private static void ConfigureAudit(ModelBuilder builder)
     {
-        builder.Entity<AuditLogRecord>(entity =>
+        builder.Entity<audit_log_record>(entity =>
         {
-            entity.ToTable("AuditLogs");
+            entity.ToTable("audit_log_record");
             entity.Property(value => value.IpAddress).HasMaxLength(64);
             entity.HasOne<AppUser>().WithMany().HasForeignKey(value => value.UserId).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(value => value.CreatedAt);
@@ -101,9 +109,9 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
 
     private static void ConfigureRefreshTokens(ModelBuilder builder)
     {
-        builder.Entity<RefreshTokenRecord>(entity =>
+        builder.Entity<refresh_token_record>(entity =>
         {
-            entity.ToTable("RefreshTokens");
+            entity.ToTable("refresh_token_record");
             entity.Property(value => value.TokenHash).HasMaxLength(64);
             entity.HasIndex(value => value.TokenHash).IsUnique();
             entity.HasIndex(value => new { value.UserId, value.RevokedAt });
@@ -111,6 +119,7 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
         });
     }
 
+    // 固定 5 个角色硬编码进种子数据；与 RolePermissionMap / SystemRoles 保持一致。
     private static void SeedRoles(ModelBuilder builder)
     {
         var roles = new[]

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using TigerRAG.Api.Common;
 
 namespace TigerRAG.Api.Controllers;
 
