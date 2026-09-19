@@ -66,11 +66,14 @@ public sealed class AuthServiceTests
         var userId = Guid.NewGuid();
         var credentials = new RecordingUserCredentialDal(changePasswordResult: true);
         var sessions = new RecordingRefreshSessionDal(null);
+        var cache = new RecordingRevocationCache();
         var service = new AuthService(
             new StubUserDal(null),
             credentials,
             new StubTokenIssuer(null),
-            sessions);
+            sessions,
+            cache
+        );
 
         var changed = await service.ChangePasswordAsync(
             userId,
@@ -81,6 +84,75 @@ public sealed class AuthServiceTests
         Assert.True(changed);
         Assert.Equal(userId, credentials.ChangedUserId);
         Assert.Equal(userId, sessions.RevokedUserId);
+        // 改密后清缓存：Identity 已自动轮换 stamp，下次请求会从 DB 重新拉，避免 TTL 内继续命中旧 stamp。
+        Assert.Equal(userId, cache.InvalidatedUserId);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_WhenFailed_DoesNotTouchCache()
+    {
+        var userId = Guid.NewGuid();
+        var credentials = new RecordingUserCredentialDal(changePasswordResult: false);
+        var sessions = new RecordingRefreshSessionDal(null);
+        var cache = new RecordingRevocationCache();
+        var service = new AuthService(
+            new StubUserDal(null),
+            credentials,
+            new StubTokenIssuer(null),
+            sessions,
+            cache
+        );
+
+        var changed = await service.ChangePasswordAsync(
+            userId,
+            "current-md5-hash",
+            "new-md5-hash",
+            CancellationToken.None);
+
+        Assert.False(changed);
+        Assert.Null(sessions.RevokedUserId);
+        Assert.Null(cache.InvalidatedUserId);
+    }
+
+    [Fact]
+    public async Task LoginAsync_WarmsRevocationCache()
+    {
+        var user = new UserAccount(Guid.NewGuid(), "admin", [SystemRoles.Admin]) { SecurityStamp = "stamp-1" };
+        var sessions = new RecordingRefreshSessionDal(new RefreshToken("r", DateTimeOffset.UtcNow.AddDays(1)));
+        var cache = new RecordingRevocationCache();
+        var service = new AuthService(
+            new StubUserDal(user),
+            new RecordingUserCredentialDal(false),
+            new StubTokenIssuer(new AccessToken("a", DateTimeOffset.UtcNow.AddMinutes(15))),
+            sessions,
+            cache
+        );
+
+        var result = await service.LoginAsync("admin", "client-md5", CancellationToken.None);
+
+        Assert.NotNull(result);
+        // 登录时预热 stamp 缓存，让登录后的第一次请求直接命中，无需回退到 DB。
+        Assert.Equal(user.Id, cache.WarmedUserId);
+        Assert.Equal("stamp-1", cache.WarmedStamp);
+    }
+
+    [Fact]
+    public async Task LoginAsync_WhenCacheThrows_StillReturnsToken()
+    {
+        var user = new UserAccount(Guid.NewGuid(), "admin", [SystemRoles.Admin]) { SecurityStamp = "stamp-1" };
+        var sessions = new RecordingRefreshSessionDal(new RefreshToken("r", DateTimeOffset.UtcNow.AddDays(1)));
+        var cache = new ThrowingRevocationCache();
+        var service = new AuthService(
+            new StubUserDal(user),
+            new RecordingUserCredentialDal(false),
+            new StubTokenIssuer(new AccessToken("a", DateTimeOffset.UtcNow.AddMinutes(15))),
+            sessions,
+            cache);
+
+        var result = await service.LoginAsync("admin", "client-md5", CancellationToken.None);
+
+        // 缓存写失败不能阻塞登录：stamp 比较路径会回退到 DB 正确判 stamp。
+        Assert.NotNull(result);
     }
 
     private static AuthService CreateService(
@@ -90,7 +162,8 @@ public sealed class AuthServiceTests
             new StubUserDal(user),
             new RecordingUserCredentialDal(false),
             new StubTokenIssuer(accessToken),
-            sessions);
+            sessions,
+            new RecordingRevocationCache());
 
     private sealed class StubUserDal(UserAccount? user) : IUserDal
     {
@@ -105,6 +178,10 @@ public sealed class AuthServiceTests
         public Task<IReadOnlyList<UserListItem>> ListAsync(CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<RevocationSnapshot?> GetRevocationSnapshotAsync(
+            Guid userId,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
         public Task AssignRolesAsync(
             Guid userId,
             IReadOnlyCollection<string> roles,
@@ -113,8 +190,10 @@ public sealed class AuthServiceTests
 
     private sealed class StubTokenIssuer(AccessToken? token) : IAccessTokenIssuer
     {
-        public AccessToken Issue(UserAccount user) =>
-            token ?? throw new InvalidOperationException("Token must not be issued.");
+        public Task<AccessToken> IssueAsync(UserAccount user, CancellationToken cancellationToken) =>
+            token is null
+                ? throw new InvalidOperationException("Token must not be issued.")
+                : Task.FromResult(token);
     }
 
     private sealed class RecordingUserCredentialDal(bool changePasswordResult) : IUserCredentialDal
@@ -189,4 +268,40 @@ public sealed class AuthServiceTests
             return Task.CompletedTask;
         }
     }
+
+    private sealed class RecordingRevocationCache : IAuthRevocationCache
+    {
+        public Guid? WarmedUserId { get; private set; }
+        public string? WarmedStamp { get; private set; }
+        public Guid? InvalidatedUserId { get; private set; }
+
+        public Task<string?> GetStampAsync(Guid userId, CancellationToken ct) =>
+            Task.FromResult<string?>(null);
+
+        public Task SetStampAsync(Guid userId, string stamp, CancellationToken ct)
+        {
+            WarmedUserId = userId;
+            WarmedStamp = stamp;
+            return Task.CompletedTask;
+        }
+
+        public Task InvalidateAsync(Guid userId, CancellationToken ct)
+        {
+            InvalidatedUserId = userId;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingRevocationCache : IAuthRevocationCache
+    {
+        public Task<string?> GetStampAsync(Guid userId, CancellationToken ct) =>
+            throw new InvalidOperationException("cache down");
+
+        public Task SetStampAsync(Guid userId, string stamp, CancellationToken ct) =>
+            throw new InvalidOperationException("cache down");
+
+        public Task InvalidateAsync(Guid userId, CancellationToken ct) =>
+            throw new InvalidOperationException("cache down");
+    }
 }
+

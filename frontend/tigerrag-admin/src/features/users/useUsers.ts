@@ -2,13 +2,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { refreshSession } from '../auth/authApi'
 import { useAuthStore } from '../auth/authStore'
 import { queryKeys } from '../../app/http'
+import { listRolesAll } from './rolesApi'
 import {
   assignRoles,
   computePasswordHash,
   createUser,
   deleteUser,
   fetchSalt,
-  listRoles,
   listUsers,
   resetPassword,
   setInitialPassword,
@@ -24,11 +24,17 @@ export function useUsers() {
   })
 }
 
-/// <summary>列出系统固定角色（按字母序）。缓存键 queryKeys.roles。</summary>
+/// <summary>
+/// 列出全部角色名（按字母序）。后端返回 RoleDto 列表，前端只取 name 字段。
+/// 缓存键 queryKeys.roles 与 useRoles 共享，便于角色 CRUD 后自动联动刷新。
+/// </summary>
 export function useUserRoles() {
   return useQuery({
     queryKey: queryKeys.roles,
-    queryFn: listRoles,
+    queryFn: async () => {
+      const roles = await listRolesAll()
+      return roles.map((role) => role.name).sort((a, b) => a.localeCompare(b))
+    },
   })
 }
 

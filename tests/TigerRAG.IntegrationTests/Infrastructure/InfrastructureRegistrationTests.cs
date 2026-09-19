@@ -49,6 +49,8 @@ public sealed class InfrastructureRegistrationTests
         Assert.Contains(typeof(conversation_record), entityTypes);
         Assert.Contains(typeof(message_record), entityTypes);
         Assert.Contains(typeof(audit_log_record), entityTypes);
+        Assert.Contains(typeof(refresh_token_record), entityTypes);
+        Assert.Contains(typeof(menu_config_record), entityTypes);
     }
 
     private static IConfiguration CreateConfiguration() => new ConfigurationBuilder()

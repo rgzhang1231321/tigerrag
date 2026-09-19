@@ -10,7 +10,9 @@ namespace TigerRAG.Api.Controllers;
 [ApiController]
 [Route("api/users")]
 [Authorize]
-public sealed class UsersController(UserRoleService userRoles) : ControllerBase
+public sealed class UsersController(
+    UserRoleService userRoles,
+    IRoleAdmin roleAdmin) : ControllerBase
 {
     /// <summary>
     /// 获取当前登录用户的标识、用户名和角色信息。
@@ -29,12 +31,12 @@ public sealed class UsersController(UserRoleService userRoles) : ControllerBase
     }
 
     /// <summary>
-    /// 获取系统中的用户列表，仅允许具有用户管理权限的用户访问。
+    /// 获取系统中的用户列表，仅 Admin 角色可访问。
     /// </summary>
     /// <param name="cancellationToken">用于取消当前请求的令牌。</param>
     /// <returns>用户及其角色列表。</returns>
     [HttpPost("list")]
-    [Authorize(Policy = SystemPermissions.ManageUsers)]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<UserResponse>>>> List(CancellationToken cancellationToken)
     {
         var users = await userRoles.ListAsync(cancellationToken);
@@ -49,7 +51,7 @@ public sealed class UsersController(UserRoleService userRoles) : ControllerBase
     /// <param name="cancellationToken">用于取消当前请求的令牌。</param>
     /// <returns>创建成功时返回 201 与新用户信息；输入不合法时返回 400。</returns>
     [HttpPost]
-    [Authorize(Policy = SystemPermissions.ManageUsers)]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<ApiResponse<UserResponse>>> Create(
         CreateUserRequest request,
         CancellationToken cancellationToken)
@@ -77,7 +79,7 @@ public sealed class UsersController(UserRoleService userRoles) : ControllerBase
     /// <param name="cancellationToken">用于取消当前请求的令牌。</param>
     /// <returns>设置成功时返回空数据；用户不存在时返回非零业务码。</returns>
     [HttpPost("{userId:guid}/initial-password")]
-    [Authorize(Policy = SystemPermissions.ManageUsers)]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> SetInitialPassword(
         Guid userId,
         SetInitialPasswordRequest request,
@@ -105,13 +107,17 @@ public sealed class UsersController(UserRoleService userRoles) : ControllerBase
     }
 
     /// <summary>
-    /// 获取系统支持的固定角色列表。
+    /// 获取系统中的角色列表（按字母序，仅返回角色名字符串）。
     /// </summary>
-    /// <returns>按名称排序的角色列表。</returns>
+    /// <returns>角色名字符串集合。</returns>
     [HttpPost("roles/list")]
-    [Authorize(Policy = SystemPermissions.ManageUsers)]
-    public ActionResult<ApiResponse<IReadOnlyCollection<string>>> ListRoles() =>
-        Ok(ApiResponse.Success(SystemRoles.All.OrderBy(role => role, StringComparer.Ordinal).ToArray()));
+    [Authorize(Roles = "Admin")]
+    [Obsolete("请改用 POST /api/roles/list，保留此端点仅作过渡兼容。")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyCollection<string>>>> ListRoles(CancellationToken cancellationToken)
+    {
+        var roles = await roleAdmin.ListAsync(cancellationToken);
+        return Ok(ApiResponse.Success<IReadOnlyCollection<string>>(roles.Select(role => role.Name).ToArray()));
+    }
 
     /// <summary>
     /// 使用请求中的角色集合替换指定用户的现有角色。
@@ -121,7 +127,7 @@ public sealed class UsersController(UserRoleService userRoles) : ControllerBase
     /// <param name="cancellationToken">用于取消当前请求的令牌。</param>
     /// <returns>更新成功时返回空数据；用户不存在时返回非零业务码。</returns>
     [HttpPost("{userId:guid}/roles")]
-    [Authorize(Policy = SystemPermissions.ManageUsers)]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> AssignRoles(
         Guid userId,
         AssignRolesRequest request,
@@ -151,7 +157,7 @@ public sealed class UsersController(UserRoleService userRoles) : ControllerBase
     /// <param name="cancellationToken">用于取消当前请求的令牌。</param>
     /// <returns>重置成功时返回空数据；用户不存在时返回非零业务码。</returns>
     [HttpPost("{userId:guid}/password")]
-    [Authorize(Policy = SystemPermissions.ManageUsers)]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> ResetPassword(
         Guid userId,
         ResetPasswordRequest request,
@@ -182,7 +188,7 @@ public sealed class UsersController(UserRoleService userRoles) : ControllerBase
     /// 删除指定用户。先撤销该用户全部刷新会话，再删账号。用户不存在时返回 404。
     /// </summary>
     [HttpPost("{userId:guid}/delete")]
-    [Authorize(Policy = SystemPermissions.ManageUsers)]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Delete(Guid userId, CancellationToken cancellationToken)
     {
         // 自保护：管理员不能删除自己，避免系统陷入无管理员状态。
@@ -201,7 +207,7 @@ public sealed class UsersController(UserRoleService userRoles) : ControllerBase
     /// 设置用户锁口：body.locked=true 时锁定并强制撤销全部会话；false 时解锁。用户不存在时返回 404。
     /// </summary>
     [HttpPost("{userId:guid}/lock")]
-    [Authorize(Policy = SystemPermissions.ManageUsers)]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> SetLockout(
         Guid userId,
         SetLockoutRequest request,
@@ -225,20 +231,8 @@ public sealed class UsersController(UserRoleService userRoles) : ControllerBase
         }
     }
 
-    private static bool TryValidatePasswordHash(string passwordHash, out string error)
-    {
-        try
-        {
-            PasswordHashFormat.EnsureAcceptable(passwordHash);
-            error = string.Empty;
-            return true;
-        }
-        catch (ArgumentException ex)
-        {
-            error = ex.Message;
-            return false;
-        }
-    }
+    private static bool TryValidatePasswordHash(string passwordHash, out string error) =>
+        PasswordHashValidator.TryValidate(passwordHash, out error);
 }
 
 public sealed record UserResponse(Guid Id, string UserName, IReadOnlyList<string> Roles, bool IsLocked)

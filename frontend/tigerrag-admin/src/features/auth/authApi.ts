@@ -21,6 +21,16 @@ export { FlagStatesOption }
 // 客户端密码处理：服务端先 GET /api/auth/salt 拿 salt，再以 MD5(password+salt) 提交 passwordHash。
 // salt 由服务端在创建用户时随机生成并存储，永不下行到客户端以外的存储；MD5 仅作传输层哈希，存储仍走服务端的 PBKDF2。
 
+interface LoginEnvelope {
+  accessToken: string
+  expiresAt: string
+  user: {
+    id: string
+    userName: string
+    roles: string[]
+  }
+}
+
 export async function login(userName: string, password: string): Promise<AuthSession> {
   const salt = await fetchSalt(userName)
   const passwordHash = md5(password + salt).toLowerCase()
@@ -90,9 +100,18 @@ async function request(path: string, init: RequestInit): Promise<AuthSession> {
     throw new Error('认证服务暂不可用')
   }
 
-  const envelope = (await response.json()) as ApiEnvelope<AuthSession>
+  const envelope = (await response.json()) as ApiEnvelope<LoginEnvelope>
   ensureSuccess(envelope, envelope.message || '认证请求失败')
-  return envelope.data
+  const data = envelope.data
+  return {
+    accessToken: data.accessToken,
+    expiresAt: data.expiresAt,
+    user: {
+      id: data.user.id,
+      userName: data.user.userName,
+      roles: data.user.roles,
+    },
+  }
 }
 
 interface ApiEnvelope<T> {

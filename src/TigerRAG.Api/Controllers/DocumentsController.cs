@@ -10,7 +10,7 @@ namespace TigerRAG.Api.Controllers;
 /// <summary>文档管理端点：详情、上传、列表、删除、权限编辑。</summary>
 [ApiController]
 [Route("api/documents")]
-[Authorize(Policy = SystemPermissions.ManageDocuments)]
+[Authorize(Roles = "Admin,KbManager,Editor")]
 public sealed class DocumentsController(DocumentAccessService documentAccess) : ControllerBase
 {
     /// <summary>获取指定文档；当前骨架阶段尚未实现具体业务逻辑。</summary>

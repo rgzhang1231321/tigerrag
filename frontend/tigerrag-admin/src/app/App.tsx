@@ -1,17 +1,24 @@
 import {
+  DatabaseOutlined,
+  FileTextOutlined,
   LockOutlined,
   LogoutOutlined,
+  MessageOutlined,
+  TeamOutlined,
 } from '@ant-design/icons'
-import { Card, Dropdown, Layout, Menu, Spin, Tag } from 'antd'
+import { Dropdown, Layout, Menu, Spin, Tag } from 'antd'
 import type { MenuProps } from 'antd'
 import { lazy, Suspense, useEffect, useMemo, useState, createElement } from 'react'
 import { Link, Route, Routes, useLocation } from 'react-router-dom'
 import { logout, refreshSession } from '../features/auth/authApi'
 import { useAuthStore } from '../features/auth/authStore'
-import { can } from '../features/auth/permissions'
-import type { Permission } from '../features/auth/permissions'
+import type { AuthUser } from '../features/auth/authStore'
+import { hasRole } from '../features/auth/permissions'
+import { Breadcrumb } from '../features/layout/Breadcrumb'
 import { menuIconMap } from '../features/menu/menuIcons'
 import { useMenuTree } from '../features/menu/useMenuConfig'
+import { useDashboardMetrics } from '../features/statistics/useStatistics'
+import { MetricCard } from '../components/MetricCard/MetricCard'
 import { ChangePasswordDialog } from '../features/users/ChangePasswordDialog'
 import { ForbiddenPage } from './ForbiddenPage'
 import { RequireRole } from './RequireRole'
@@ -30,6 +37,9 @@ const LoginPage = lazy(() => import('../features/auth/LoginPage'))
 const MenuManagementPage = lazy(() =>
   import('../features/menu/MenuManagement').then((module) => ({ default: module.MenuManagement })),
 )
+const ReportsPage = lazy(() =>
+  import('../features/reports/ReportsPage').then((module) => ({ default: module.ReportsPage })),
+)
 
 const { Header, Content, Sider } = Layout
 
@@ -37,21 +47,26 @@ interface NavigationItem {
   key: string
   icon?: React.ReactNode
   label: React.ReactNode
-  permission?: Permission
+  roles?: readonly string[]
   children?: NavigationItem[]
 }
 
 // 把后端平铺列表组装成前端导航树：ParentId 为 null 的是顶级，其余按 ParentId 归到 children。
-function buildNavigation(items: ReadonlyArray<{ id: string; key: string; label: string; icon: string | null; permission: string | null; parentId: string | null }>): NavigationItem[] {
+function buildNavigation(items: ReadonlyArray<{ id: string; key: string; label: string; icon: string | null; roles: string[]; parentId: string | null }>): NavigationItem[] {
   const roots: NavigationItem[] = []
   const childrenMap = new Map<string, NavigationItem[]>()
   for (const item of items) {
-    const icon = item.icon ? menuIconMap[item.icon] : undefined
+    const IconComponent = item.icon ? menuIconMap[item.icon] : undefined
     const nav: NavigationItem = {
       key: item.key,
-      icon: icon ? createElement(icon) : undefined,
+      // 已知图标按映射渲染；未知图标降级显示文本 Tag，让管理员看到原值以便发现配置错误。
+      icon: IconComponent
+        ? createElement(IconComponent)
+        : item.icon
+          ? <Tag style={{ margin: 0 }}>{item.icon}</Tag>
+          : undefined,
       label: item.label,
-      permission: (item.permission ?? undefined) as Permission | undefined,
+      roles: item.roles,
     }
     if (item.parentId) {
       const siblings = childrenMap.get(item.parentId) ?? []
@@ -82,6 +97,14 @@ function findActiveParent(pathname: string, items: NavigationItem[]): Navigation
     }
   }
   return null
+}
+
+// 菜单可见性：空数组/NULL = 所有人可见；Admin 始终可见（bypass）；其余按角色名单过滤。
+function isMenuVisible(user: AuthUser | null, item: NavigationItem): boolean {
+  if (user === null) return false
+  if (item.roles === undefined || item.roles.length === 0) return true
+  if (hasRole(user, 'Admin')) return true
+  return item.roles.some((role) => hasRole(user, role))
 }
 
 export function App() {
@@ -121,20 +144,17 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
   const user = useAuthStore((state) => state.user)
   const clear = useAuthStore((state) => state.clear)
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
+  const [siderCollapsed, setSiderCollapsed] = useState(false)
   const { data: menuItems = [] } = useMenuTree()
 
   // 把后端平铺列表组装成前端导航树：ParentId 为 null 的是顶级，其余按 ParentId 归到 children。
   const navigation = useMemo(() => buildNavigation(menuItems), [menuItems])
 
-  const visibleNavigation = navigation.filter(
-    (item) => item.permission === undefined || can(user, item.permission),
-  )
+  const visibleNavigation = navigation.filter((item) => isMenuVisible(user, item))
 
   // 当前路径匹配到的含子项的顶级菜单 → 左侧边栏展示其子项。
   const activeParent = findActiveParent(location.pathname, visibleNavigation)
-  const sidebarItems = activeParent?.children?.filter(
-    (child) => child.permission === undefined || can(user, child.permission),
-  )
+  const sidebarItems = activeParent?.children?.filter((child) => isMenuVisible(user, child))
 
   // 顶级菜单：有子项的点击后跳转到第一个子项（边栏随即展示全部子菜单），无子项的直接链接。
   // 不用 Antd Menu 是因为其水平溢出计算有 bug（会错误地把项折叠到溢出子菜单）。
@@ -180,10 +200,29 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
       </Header>
       <Layout>
         {sidebarItems !== undefined && (
-          <Sider width={200} theme="light" className="app-sider">
+          <Sider
+            width={200}
+            collapsedWidth={64}
+            collapsed={siderCollapsed}
+            onCollapse={setSiderCollapsed}
+            theme="light"
+            className="app-sider"
+            trigger={null}
+          >
+            <div className="sider-collapse-bar">
+              <button
+                type="button"
+                className="sider-collapse-trigger"
+                aria-label={siderCollapsed ? '展开侧边栏' : '折叠侧边栏'}
+                onClick={() => setSiderCollapsed(!siderCollapsed)}
+              >
+                {siderCollapsed ? '»' : '«'}
+              </button>
+            </div>
             <Menu
               mode="inline"
               selectedKeys={[location.pathname]}
+              inlineCollapsed={siderCollapsed}
               items={sidebarItems.map((item) => ({
                 key: item.key,
                 icon: item.icon,
@@ -193,6 +232,7 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
           </Sider>
         )}
         <Content className="app-content">
+          <div className="app-breadcrumb"><Breadcrumb /></div>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/knowledge-bases" element={<ModulePage title="知识库" />} />
@@ -201,7 +241,7 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
             <Route
               path="/users"
               element={
-                <RequireRole permission="users.manage">
+                <RequireRole roles={['Admin']}>
                   <Suspense fallback={<Spin className="app-loading" />}>
                     <UsersPage />
                   </Suspense>
@@ -211,15 +251,17 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
             <Route
               path="/roles"
               element={
-                <Suspense fallback={<Spin className="app-loading" />}>
-                  <RolesPage />
-                </Suspense>
+                <RequireRole roles={['Admin']}>
+                  <Suspense fallback={<Spin className="app-loading" />}>
+                    <RolesPage />
+                  </Suspense>
+                </RequireRole>
               }
             />
             <Route
               path="/menu-configs"
               element={
-                <RequireRole permission="users.manage">
+                <RequireRole roles={['Admin']}>
                   <Suspense fallback={<Spin className="app-loading" />}>
                     <MenuManagementPage />
                   </Suspense>
@@ -227,9 +269,19 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
               }
             />
             <Route
+              path="/reports"
+              element={
+                <RequireRole roles={['Admin', 'Auditor']}>
+                  <Suspense fallback={<Spin className="app-loading" />}>
+                    <ReportsPage />
+                  </Suspense>
+                </RequireRole>
+              }
+            />
+            <Route
               path="/audit"
               element={
-                <RequireRole permission="audit.read">
+                <RequireRole roles={['Admin', 'Auditor']}>
                   <Suspense fallback={<Spin className="app-loading" />}>
                     <AuditPage />
                   </Suspense>
@@ -253,20 +305,45 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
 }
 
 function Dashboard() {
+  const { data, isPending } = useDashboardMetrics()
+
   return (
     <main>
       <h2 className="page-heading">系统概览</h2>
       <div className="metric-grid">
-        <Metric label="知识库" value="0" />
-        <Metric label="已索引文档" value="0" />
-        <Metric label="处理中" value="0" />
+        <MetricCard
+          label="知识库"
+          value={data?.knowledgeBaseCount ?? 0}
+          loading={isPending}
+          icon={<DatabaseOutlined />}
+        />
+        <MetricCard
+          label="文档总数"
+          value={data?.documentCount ?? 0}
+          loading={isPending}
+          icon={<FileTextOutlined />}
+          footer={
+            data !== undefined && data.documentCount > 0
+              ? `已索引 ${data.indexedDocumentCount} · 处理中 ${data.processingDocumentCount}`
+              : undefined
+          }
+        />
+        <MetricCard
+          label="用户总数"
+          value={data?.userCount ?? 0}
+          loading={isPending}
+          icon={<TeamOutlined />}
+        />
+        <MetricCard
+          label="问答消息数"
+          value={data?.messageCount ?? 0}
+          loading={isPending}
+          icon={<MessageOutlined />}
+          footer={data !== undefined ? `${data.conversationCount} 个会话` : undefined}
+        />
       </div>
     </main>
   )
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return <Card className="metric-card"><div className="metric-label">{label}</div><div className="metric-value">{value}</div></Card>
 }
 
 function ModulePage({ title }: { title: string }) {

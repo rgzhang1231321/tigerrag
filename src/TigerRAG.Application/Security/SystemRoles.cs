@@ -1,6 +1,6 @@
 namespace TigerRAG.Application.Security;
 
-/// <summary>系统固定角色。角色与权限的映射见 <see cref="RolePermissionMap"/>。</summary>
+/// <summary>系统固定角色。权限通路为 用户 → 角色 → 菜单，菜单可见性由角色名单决定。</summary>
 public static class SystemRoles
 {
     public const string Admin = "Admin";

@@ -45,9 +45,13 @@ public static class InfrastructureComposition
         services.AddScoped<IUserDal, UserDal>();
         services.AddScoped<IUserCredentialDal, UserDal>();
         services.AddScoped<IRefreshSessionDal, RefreshSessionDal>();
+        services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.AddScoped<IAdminBootstrapper, AdminBootstrapper>();
+        services.AddScoped<IUserSecurityStampRotator, UserSecurityStampRotator>();
         services.AddScoped<IDocumentAccessDal, DocumentAccessDal>();
         services.AddScoped<IMenuConfigDal, MenuConfigDal>();
+        services.AddScoped<IRoleAdmin, RoleAdminDal>();
+        services.AddScoped<RoleAdminService>();
         services.AddScoped<IAccessTokenIssuer, JwtAccessTokenIssuer>();
         services.AddScoped<AuthService>();
         services.AddScoped<UserRoleService>();
@@ -56,6 +60,8 @@ public static class InfrastructureComposition
         services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(
             configuration.GetConnectionString("Redis")
                 ?? throw new InvalidOperationException("ConnectionStrings:Redis is required.")));
+        // JWT 按用户撤权的 Redis L1：键 auth:user:{guid}:stamp，TTL = AccessTokenMinutes*60 + ClockSkewSeconds。
+        services.AddSingleton<IAuthRevocationCache, RedisAuthRevocationCache>();
         services.AddSingleton(_ => new QdrantClient(new Uri(
             configuration["Services:Qdrant"]
                 ?? throw new InvalidOperationException("Services:Qdrant is required."))));

@@ -19,8 +19,13 @@ public sealed class RefreshSessionDal(
 {
     public async Task<RefreshToken> CreateAsync(Guid userId, CancellationToken cancellationToken)
     {
+        // 拿到用户当前 stamp 并写入新令牌，使后续轮换能基于 stamp 比对识别"敏感动作后的废止"。
+        // Identity 在 CreateAsync / ChangePasswordAsync / SetLockoutEndDateAsync 等路径上会轮换 stamp，
+        // 此处只读不写，因此 user 字段在 manager 内已被加载到本地，直接读属性即可，无额外往返。
+        var user = await userManager.FindByIdAsync(userId.ToString())
+            ?? throw new KeyNotFoundException($"User {userId} was not found.");
         var token = NewToken();
-        dbContext.RefreshTokens.Add(Record(userId, token));
+        dbContext.RefreshTokens.Add(Record(user.Id, token, user.SecurityStamp));
         await dbContext.SaveChangesAsync(cancellationToken);
         return token;
     }
@@ -52,16 +57,36 @@ public sealed class RefreshSessionDal(
             return null;
         }
 
+        // 锁定即拒绝：Identity 自动锁定（失败次数超阈值）或管理员手动锁定后，
+        // 既未撤销该行的 RefreshToken 也不能再借此换取新 AccessToken，否则等于绕过锁口。
+        if (user.LockoutEnd is { } lockoutEnd && lockoutEnd > now)
+        {
+            await tx.RollbackAsync(cancellationToken);
+            return null;
+        }
+
+        // stamp 不一致即视为已被敏感动作废止：改密、角色变更、删除前的标记轮换等都会换 stamp。
+        // SecurityStamp 是"按用户撤权"的主防线，比依赖 RevokeAllAsync 的批量 UPDATE 更早命中，
+        // 也避免 PostgreSQL read-committed 下 ExecuteUpdate 快照与并发轮换 INSERT 之间的窗口。
+        if (!string.Equals(current.SecurityStamp, user.SecurityStamp, StringComparison.Ordinal))
+        {
+            await tx.RollbackAsync(cancellationToken);
+            return null;
+        }
+
         // 原子轮换：原会话立即撤销，再签发新会话，避免并发请求复用旧令牌。
         current.RevokedAt = now;
         var replacement = NewToken();
-        dbContext.RefreshTokens.Add(Record(user.Id, replacement));
+        dbContext.RefreshTokens.Add(Record(user.Id, replacement, user.SecurityStamp));
         await dbContext.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);
 
         var roles = await userManager.GetRolesAsync(user);
         return new RefreshSession(
-            new UserAccount(user.Id, user.UserName ?? string.Empty, roles.ToArray()),
+            new UserAccount(user.Id, user.UserName ?? string.Empty, roles.ToArray())
+            {
+                SecurityStamp = user.SecurityStamp ?? string.Empty
+            },
             replacement);
     }
 
@@ -93,13 +118,14 @@ public sealed class RefreshSessionDal(
         Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32)),
         DateTimeOffset.UtcNow.AddDays(options.Value.LifetimeDays));
 
-    private static refresh_token_record Record(Guid userId, RefreshToken token) => new()
+    private static refresh_token_record Record(Guid userId, RefreshToken token, string? securityStamp) => new()
     {
         Id = Guid.NewGuid(),
         UserId = userId,
         TokenHash = Hash(token.Value),
         ExpiresAt = token.ExpiresAt,
-        CreatedAt = DateTimeOffset.UtcNow
+        CreatedAt = DateTimeOffset.UtcNow,
+        SecurityStamp = securityStamp
     };
 
     // 哈希而非加密：哈希不可逆，泄露库也不会让持有者伪造会话。

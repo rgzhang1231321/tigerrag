@@ -41,6 +41,13 @@ public sealed class DocumentAccessDal(TigerRagDbContext dbContext) : IDocumentAc
         IReadOnlyCollection<string> roles,
         CancellationToken cancellationToken)
     {
+        // 父行行锁：把同一文档的并发覆盖式 ACL 写入串行化，防止并集残留与删除意图丢失。
+        // 默认 READ COMMITTED 下 SELECT FOR UPDATE 会阻塞其他写者，直到本事务提交/回滚。
+        await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $""" SELECT 1 FROM "document_record" WHERE "Id" = {documentId} FOR UPDATE """,
+            cancellationToken);
+
         var ownerId = await dbContext.Documents
             .Where(document => document.Id == documentId)
             .Join(
@@ -51,12 +58,14 @@ public sealed class DocumentAccessDal(TigerRagDbContext dbContext) : IDocumentAc
             .SingleOrDefaultAsync(cancellationToken);
         if (ownerId is null)
         {
+            await tx.RollbackAsync(cancellationToken);
             throw new KeyNotFoundException($"Document {documentId} was not found.");
         }
 
         if (!isAdmin && ownerId != actorId)
         {
             // 资源级授权：仅 KB 拥有者或 Admin 可修改 ACL。
+            await tx.RollbackAsync(cancellationToken);
             throw new UnauthorizedAccessException("Only the knowledge base owner can change document permissions.");
         }
 
@@ -65,6 +74,7 @@ public sealed class DocumentAccessDal(TigerRagDbContext dbContext) : IDocumentAc
             .CountAsync(user => distinctUserIds.Contains(user.Id), cancellationToken);
         if (existingUserCount != distinctUserIds.Length)
         {
+            await tx.RollbackAsync(cancellationToken);
             throw new ArgumentException("One or more permission users do not exist.", nameof(userIds));
         }
 
@@ -74,6 +84,7 @@ public sealed class DocumentAccessDal(TigerRagDbContext dbContext) : IDocumentAc
             .ToArrayAsync(cancellationToken);
         if (roleIds.Length != roles.Count)
         {
+            await tx.RollbackAsync(cancellationToken);
             throw new InvalidOperationException("One or more system roles are missing from the database.");
         }
 
@@ -82,6 +93,7 @@ public sealed class DocumentAccessDal(TigerRagDbContext dbContext) : IDocumentAc
             .ToArrayAsync(cancellationToken);
         ApplyPermissionChanges(dbContext, documentId, currentPermissions, distinctUserIds, roleIds);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
     }
 
     internal static void ApplyPermissionChanges(

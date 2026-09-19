@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using TigerRAG.Application.Security;
 using TigerRAG.Infrastructure.Identity;
 using TigerRAG.Infrastructure.Persistence.Entities;
@@ -115,6 +116,7 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
         {
             entity.ToTable("refresh_token_record");
             entity.Property(value => value.TokenHash).HasMaxLength(64);
+            entity.Property(value => value.SecurityStamp).HasMaxLength(64);
             entity.HasIndex(value => value.TokenHash).IsUnique();
             entity.HasIndex(value => new { value.UserId, value.RevokedAt });
             entity.HasOne<AppUser>().WithMany().HasForeignKey(value => value.UserId);
@@ -129,13 +131,23 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
             entity.Property(value => value.Key).HasMaxLength(100);
             entity.Property(value => value.Label).HasMaxLength(100);
             entity.Property(value => value.Icon).HasMaxLength(100);
-            entity.Property(value => value.Permission).HasMaxLength(100);
+            // string[] 与 jsonb 互转：写入序列化为 JSON 文本，读取反序列化；空数组落库为 "[]"。
+            entity.Property(value => value.Roles)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, JsonOptions.Default),
+                    v => JsonSerializer.Deserialize<string[]>(v, JsonOptions.Default) ?? Array.Empty<string>())
+                .HasColumnType("jsonb");
             entity.HasIndex(value => value.Key).IsUnique();
-            entity.HasOne<menu_config_record>().WithMany().HasForeignKey(value => value.ParentId);
+            entity.HasOne<menu_config_record>().WithMany().HasForeignKey(value => value.ParentId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 
-    // 固定 5 个角色硬编码进种子数据；与 RolePermissionMap / SystemRoles 保持一致。
+    private static class JsonOptions
+    {
+        public static readonly JsonSerializerOptions Default = new();
+    }
+
+    // 固定 5 个角色硬编码进种子数据；与 SystemRoles 保持一致。
     private static void SeedRoles(ModelBuilder builder)
     {
         var roles = new[]

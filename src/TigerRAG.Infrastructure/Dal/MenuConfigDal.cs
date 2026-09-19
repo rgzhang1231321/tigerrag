@@ -5,7 +5,7 @@ using TigerRAG.Infrastructure.Persistence.Entities;
 
 namespace TigerRAG.Infrastructure.Dal;
 
-/// <summary>菜单配置 DAL：从 menu_config_record 表读取与写入菜单配置。</summary>
+/// <summary>菜单配置 DAL：从 menu_config_record 表读取与写入菜单配置。业务规则校验由 Application 层负责。</summary>
 public sealed class MenuConfigDal(TigerRagDbContext dbContext) : IMenuConfigDal
 {
     public async Task<IReadOnlyList<MenuConfigItem>> ListAsync(CancellationToken cancellationToken)
@@ -19,7 +19,7 @@ public sealed class MenuConfigDal(TigerRagDbContext dbContext) : IMenuConfigDal
                 config.Key,
                 config.Label,
                 config.Icon,
-                config.Permission,
+                config.Roles ?? Array.Empty<string>(),
                 config.ParentId,
                 config.SortOrder,
                 config.IsEnabled))
@@ -30,7 +30,7 @@ public sealed class MenuConfigDal(TigerRagDbContext dbContext) : IMenuConfigDal
         string key,
         string label,
         string? icon,
-        string? permission,
+        IReadOnlyCollection<string> roles,
         Guid? parentId,
         int sortOrder,
         bool isEnabled,
@@ -43,52 +43,98 @@ public sealed class MenuConfigDal(TigerRagDbContext dbContext) : IMenuConfigDal
             Key = key,
             Label = label,
             Icon = icon,
-            Permission = permission,
+            Roles = roles?.ToArray() ?? Array.Empty<string>(),
             ParentId = parentId,
             SortOrder = sortOrder,
             IsEnabled = isEnabled,
         };
         dbContext.MenuConfigs.Add(record);
         await dbContext.SaveChangesAsync(cancellationToken);
-        return new MenuConfigItem(record.Id, record.Key, record.Label, record.Icon, record.Permission, record.ParentId, record.SortOrder, record.IsEnabled);
+        return new MenuConfigItem(record.Id, record.Key, record.Label, record.Icon, record.Roles, record.ParentId, record.SortOrder, record.IsEnabled);
     }
 
     public async Task<MenuConfigItem?> UpdateAsync(
         Guid id,
-        string? label,
-        string? icon,
-        string? permission,
-        Guid? parentId,
-        int? sortOrder,
-        bool? isEnabled,
+        FieldUpdate<string> label,
+        FieldUpdate<string> icon,
+        FieldUpdate<IReadOnlyCollection<string>> roles,
+        FieldUpdate<Guid?> parentId,
+        FieldUpdate<int> sortOrder,
+        FieldUpdate<bool> isEnabled,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var record = await dbContext.MenuConfigs.FindAsync(new object[] { id }, cancellationToken);
-        if (record is null)
-        {
-            return null;
-        }
-        if (label is not null) record.Label = label;
-        if (icon is not null) record.Icon = icon;
-        if (permission is not null) record.Permission = permission;
-        if (parentId is not null) record.ParentId = parentId;
-        if (sortOrder is not null) record.SortOrder = sortOrder.Value;
-        if (isEnabled is not null) record.IsEnabled = isEnabled.Value;
+        if (record is null) return null;
+
+        // FieldUpdate{T}.HasValue 区分"不修改"（Skip）与"设为指定值"（Set）
+        if (label.HasValue) record.Label = label.Value!;
+        if (icon.HasValue) record.Icon = icon.Value;
+        if (roles.HasValue) record.Roles = roles.Value?.ToArray() ?? Array.Empty<string>();
+        if (parentId.HasValue) record.ParentId = parentId.Value;
+        if (sortOrder.HasValue) record.SortOrder = sortOrder.Value;
+        if (isEnabled.HasValue) record.IsEnabled = isEnabled.Value;
+
         await dbContext.SaveChangesAsync(cancellationToken);
-        return new MenuConfigItem(record.Id, record.Key, record.Label, record.Icon, record.Permission, record.ParentId, record.SortOrder, record.IsEnabled);
+        return new MenuConfigItem(record.Id, record.Key, record.Label, record.Icon, record.Roles, record.ParentId, record.SortOrder, record.IsEnabled);
     }
 
-    public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    /// <summary>删除菜单及其全部后代（BFS 收集后按深度倒序删除，确保子行先于父行被移除）。返回删除的节点数；不存在时返回 0。</summary>
+    public async Task<int> DeleteSubtreeAsync(Guid id, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var record = await dbContext.MenuConfigs.FindAsync(new object[] { id }, cancellationToken);
-        if (record is null)
+
+        var all = await dbContext.MenuConfigs
+            .Select(r => new MenuNode(r.Id, r.ParentId))
+            .ToListAsync(cancellationToken);
+
+        if (!all.Any(n => n.Id == id))
+            return 0;
+
+        // BFS 收集 id 的全部后代
+        var toDelete = new List<Guid> { id };
+        var visited = new HashSet<Guid> { id };
+        var queue = new Queue<Guid>();
+        queue.Enqueue(id);
+        while (queue.Count > 0)
         {
-            return false;
+            var current = queue.Dequeue();
+            foreach (var child in all.Where(n => n.ParentId == current))
+            {
+                if (visited.Add(child.Id))
+                {
+                    toDelete.Add(child.Id);
+                    queue.Enqueue(child.Id);
+                }
+            }
         }
-        dbContext.MenuConfigs.Remove(record);
+
+        var records = await dbContext.MenuConfigs
+            .Where(r => toDelete.Contains(r.Id))
+            .ToListAsync(cancellationToken);
+
+        // 按深度倒序删除：叶子先于根
+        foreach (var record in records.OrderByDescending(r => ComputeDepth(r.Id, all)))
+            dbContext.MenuConfigs.Remove(record);
+
         await dbContext.SaveChangesAsync(cancellationToken);
-        return true;
+        return toDelete.Count;
     }
+
+    private static int ComputeDepth(Guid id, List<MenuNode> all)
+    {
+        var depth = 0;
+        var current = id;
+        while (true)
+        {
+            var parent = all.FirstOrDefault(n => n.Id == current)?.ParentId;
+            if (parent is null) break;
+            depth++;
+            current = parent.Value;
+            if (depth > 1000) throw new InvalidOperationException("菜单层级过深或存在循环。");
+        }
+        return depth;
+    }
+
+    private sealed record MenuNode(Guid Id, Guid? ParentId);
 }

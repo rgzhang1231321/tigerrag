@@ -40,7 +40,8 @@ export function listUsers(): Promise<UserDto[]> {
   return http<UserDto[]>('/api/users/list', { method: 'POST' })
 }
 
-/// <summary>获取系统固定角色列表（按字母序）。仅 users.manage 受权。</summary>
+/// <summary>获取系统固定角色列表（按字母序）。仅 users.manage 受权。已废弃，请改用 <c>rolesApi.listRolesAll</c>。</summary>
+/** @deprecated 请改用 `rolesApi.listRolesAll`，走 `POST /api/roles/list` 返回 DB 实时角色集合。 */
 export function listRoles(): Promise<string[]> {
   return http<string[]>('/api/users/roles/list', { method: 'POST' })
 }

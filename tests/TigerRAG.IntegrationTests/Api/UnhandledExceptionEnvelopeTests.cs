@@ -90,6 +90,9 @@ public sealed class UnhandledExceptionEnvelopeTests
         public Task<IReadOnlyList<UserListItem>> ListAsync(CancellationToken cancellationToken) =>
             throw new InvalidOperationException("synthetic dal failure");
 
+        public Task<RevocationSnapshot?> GetRevocationSnapshotAsync(Guid userId, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("synthetic dal failure");
+
         public Task AssignRolesAsync(Guid userId, IReadOnlyCollection<string> roles, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("synthetic dal failure");
     }

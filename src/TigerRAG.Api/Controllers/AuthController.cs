@@ -49,6 +49,12 @@ public sealed class AuthController(AuthService authService) : ControllerBase
         LoginRequest request,
         CancellationToken cancellationToken)
     {
+        // 入口处做格式校验：客户端提交的必须是 32 位小写 hex。
+        if (!PasswordHashValidator.TryValidate(request.PasswordHash, out var hashError))
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation, hashError));
+        }
+
         var result = await authService.LoginAsync(request.UserName, request.PasswordHash, cancellationToken);
         if (result is null)
         {
@@ -118,6 +124,16 @@ public sealed class AuthController(AuthService authService) : ControllerBase
         if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
         {
             return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "用户身份无效"));
+        }
+
+        // 入口处做格式校验：客户端提交的必须是 32 位小写 hex。先校当前密码、再校新密码。
+        if (!PasswordHashValidator.TryValidate(request.CurrentPasswordHash, out var currentError))
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation, currentError));
+        }
+        if (!PasswordHashValidator.TryValidate(request.NewPasswordHash, out var newError))
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation, newError));
         }
 
         var changed = await authService.ChangePasswordAsync(

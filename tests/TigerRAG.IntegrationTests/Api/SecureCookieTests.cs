@@ -31,7 +31,7 @@ public sealed class SecureCookieTests
         var response = await client.PostAsJsonAsync("/api/auth/login", new
         {
             userName = "editor",
-            passwordHash = "client-md5-hash"
+            passwordHash = new string('c', 32)
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -50,7 +50,7 @@ public sealed class SecureCookieTests
             Content = JsonContent.Create(new
             {
                 userName = "editor",
-                passwordHash = "client-md5-hash"
+                passwordHash = new string('c', 32)
             })
         };
         request.Headers.Add("X-Forwarded-Proto", "https");
@@ -73,7 +73,7 @@ public sealed class SecureCookieTests
                 // 用最小 stub 让登录通过；不依赖任何外部 SDK（Postgres/Redis/Qdrant/MinIO）。
                 services.RemoveAll<IUserDal>();
                 services.AddSingleton<IUserDal>(new StubUserDal(
-                    new UserAccount(Guid.NewGuid(), "editor", [SystemRoles.Editor]),
+                    new UserAccount(Guid.NewGuid(), "editor", [SystemRoles.Editor]) { SecurityStamp = "test-stamp" },
                     salt: "test-salt"));
                 services.RemoveAll<IUserCredentialDal>();
                 services.AddSingleton<IUserCredentialDal>(new StubCredentialDal());
@@ -98,6 +98,10 @@ public sealed class SecureCookieTests
             => Task.FromResult(salt);
         public Task<IReadOnlyList<UserListItem>> ListAsync(CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyList<UserListItem>>([new UserListItem(user.Id, user.UserName, user.Roles, false)]);
+        public Task<RevocationSnapshot?> GetRevocationSnapshotAsync(Guid userId, CancellationToken cancellationToken)
+            => Task.FromResult<RevocationSnapshot?>(user.Id == userId
+                ? new RevocationSnapshot(user.SecurityStamp, false)
+                : null);
         public Task AssignRolesAsync(Guid userId, IReadOnlyCollection<string> roles, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }

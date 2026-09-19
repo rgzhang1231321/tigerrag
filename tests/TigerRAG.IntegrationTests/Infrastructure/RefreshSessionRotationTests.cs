@@ -14,6 +14,7 @@ namespace TigerRAG.IntegrationTests.Infrastructure;
 /// 两个并发请求使用同一个旧令牌，恰好一个成功签发新会话，另一个被数据库锁阻挡后看到原行已撤销。
 /// 必须在本地 Postgres 上跑（与 <c>LocalPostgresFixture</c> 一致）；无 DB 时 fail loud。
 /// </summary>
+[Collection(nameof(PostgresCollection))]
 public sealed class RefreshSessionRotationTests : IAsyncLifetime
 {
     private const string TestDatabaseName = "tigerrag_rotation_test";
@@ -134,13 +135,16 @@ public sealed class RefreshSessionRotationTests : IAsyncLifetime
         // DAL 内部对 value 走 SHA-256；这里用同一算法算出 TokenHash 来构造等价 seed。
         var tokenHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(rawToken)));
+        // stamp 必须与用户当前 stamp 一致，否则 RotateAsync 在新检查下会拒轮换。
+        var stamp = await userManager.GetSecurityStampAsync(user);
         var record = new TigerRAG.Infrastructure.Persistence.Entities.refresh_token_record
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,
             TokenHash = tokenHash,
             ExpiresAt = DateTimeOffset.UtcNow.AddDays(1),
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = DateTimeOffset.UtcNow,
+            SecurityStamp = stamp
         };
         context.RefreshTokens.Add(record);
         await context.SaveChangesAsync();

@@ -8,7 +8,7 @@ namespace TigerRAG.Api.Controllers;
 /// <summary>审计日志查询端点。仅 Auditor 与 Admin 通过 Policy 准入。</summary>
 [ApiController]
 [Route("api/audit-logs")]
-[Authorize(Policy = SystemPermissions.ReadAudit)]
+[Authorize(Roles = "Admin,Auditor")]
 public sealed class AuditLogsController : ControllerBase
 {
     /// <summary>获取审计日志列表；当前骨架阶段尚未实现具体业务逻辑。</summary>

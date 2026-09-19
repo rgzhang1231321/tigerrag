@@ -5,7 +5,7 @@ export interface MenuConfigDto {
   key: string
   label: string
   icon: string | null
-  permission: string | null
+  roles: string[]
   parentId: string | null
   sortOrder: number
   isEnabled: boolean
@@ -26,7 +26,7 @@ export async function createMenuConfig(input: {
   key: string
   label: string
   icon: string | null
-  permission: string | null
+  roles: string[]
   parentId: string | null
   sortOrder: number
   isEnabled: boolean
@@ -41,7 +41,7 @@ export async function updateMenuConfig(
     key: string
     label: string
     icon: string | null
-    permission: string | null
+    roles: string[]
     parentId: string | null
     sortOrder: number
     isEnabled: boolean

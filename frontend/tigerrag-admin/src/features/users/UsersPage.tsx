@@ -190,7 +190,7 @@ function CreateUserDialog({ open, roles, onCancel, onCreated }: CreateUserDialog
     try {
       await mutation.mutateAsync({ userName: userName.trim(), roles: selectedRoles, password })
       message.success('用户创建成功')
-      onCreated()
+      setStep(2)
     } catch (mutationError) {
       setError(mutationError instanceof Error ? mutationError.message : '创建失败')
     } finally {

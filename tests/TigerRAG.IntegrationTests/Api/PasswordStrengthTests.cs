@@ -92,6 +92,8 @@ public sealed class PasswordStrengthTests
                 services.AddSingleton<IUserCredentialDal>(new RecordingCredentialDal());
                 services.RemoveAll<IRefreshSessionDal>();
                 services.AddSingleton<IRefreshSessionDal>(new NoopRefreshSessionDal());
+                services.RemoveAll<IUserSecurityStampRotator>();
+                services.AddSingleton<IUserSecurityStampRotator>(new NoopSecurityStampRotator());
             });
         });
 
@@ -101,7 +103,7 @@ public sealed class PasswordStrengthTests
         var response = await client.PostAsJsonAsync("/api/auth/login", new
         {
             userName = "admin",
-            passwordHash = "client-md5-hash"
+            passwordHash = new string('c', 32)
         });
         response.EnsureSuccessStatusCode();
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -118,8 +120,8 @@ public sealed class PasswordStrengthTests
 
     private sealed class AdminUserDal : IUserDal
     {
-        private static readonly UserAccount Admin =
-            new(Guid.NewGuid(), "admin", [SystemRoles.Admin]);
+        public static readonly UserAccount Admin =
+            new(Guid.NewGuid(), "admin", [SystemRoles.Admin]) { SecurityStamp = "test-stamp" };
 
         public Task<UserAccount?> ValidateCredentialsAsync(string userName, string passwordHash, CancellationToken cancellationToken)
             => Task.FromResult<UserAccount?>(Admin);
@@ -129,6 +131,10 @@ public sealed class PasswordStrengthTests
             => Task.FromResult<IReadOnlyList<UserListItem>>([new UserListItem(Admin.Id, Admin.UserName, Admin.Roles, false)]);
         public Task AssignRolesAsync(Guid userId, IReadOnlyCollection<string> roles, CancellationToken cancellationToken)
             => Task.CompletedTask;
+        public Task<RevocationSnapshot?> GetRevocationSnapshotAsync(
+            Guid userId,
+            CancellationToken cancellationToken) => Task.FromResult<RevocationSnapshot?>(
+                userId == Admin.Id ? new RevocationSnapshot("test-stamp", false) : null);
     }
 
     private sealed class RecordingCredentialDal : IUserCredentialDal
@@ -166,5 +172,11 @@ public sealed class PasswordStrengthTests
             => Task.FromResult<RefreshSession?>(null);
         public Task RevokeAsync(string value, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task RevokeAllAsync(Guid userId, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class NoopSecurityStampRotator : IUserSecurityStampRotator
+    {
+        public Task RotateAsync(Guid userId, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task InvalidateAsync(Guid userId, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

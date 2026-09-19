@@ -1,6 +1,20 @@
-import { Button, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, message } from 'antd'
+import {
+  AutoComplete,
+  Button,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Popconfirm,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tag,
+  message,
+} from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   useCreateMenuConfig,
   useDeleteMenuConfig,
@@ -9,44 +23,135 @@ import {
 } from './useMenuConfig'
 import type { MenuConfigDto } from './menuApi'
 import { AVAILABLE_ICONS } from './menuIcons'
-import { listPermissions, permissionLabel } from '../auth/permissions'
+import { ALL_ROLES } from '../auth/permissions'
+import { useRoles } from '../users/useRoles'
 
 interface MenuForm {
   key: string
   label: string
   icon: string | null
-  permission: string | null
+  roles: string[]
   parentId: string | null
   sortOrder: number
   isEnabled: boolean
+}
+
+/// <summary>带子级引用的菜单节点：把扁平 parentId 平铺结果拼成树给前端表格渲染。</summary>
+export interface TreeMenuNode extends MenuConfigDto {
+  children: TreeMenuNode[]
 }
 
 const emptyForm: MenuForm = {
   key: '',
   label: '',
   icon: null,
-  permission: null,
+  roles: [],
   parentId: null,
   sortOrder: 0,
   isEnabled: true,
 }
 
-/// <summary>菜单管理页：CRUD 菜单配置，支持层级、图标、权限、排序、启用/禁用。</summary>
+/// <summary>
+/// 把扁平菜单列表拼成树。parentId 指向不存在项的孤立节点落到顶级，避免数据丢失。
+/// 同级按 sortOrder 升序、再按 key 字典序，保证输出稳定。
+/// </summary>
+export function buildMenuTree(items: readonly MenuConfigDto[]): TreeMenuNode[] {
+  const map = new Map<string, TreeMenuNode>()
+  items.forEach((item) => map.set(item.id, { ...item, children: [] }))
+  const roots: TreeMenuNode[] = []
+  items.forEach((item) => {
+    const node = map.get(item.id)
+    if (node === undefined) return
+    if (item.parentId !== null && map.has(item.parentId)) {
+      const parent = map.get(item.parentId)
+      if (parent !== undefined) parent.children.push(node)
+    } else {
+      roots.push(node)
+    }
+  })
+  const sortRec = (nodes: TreeMenuNode[]) => {
+    nodes.sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key))
+    nodes.forEach((n) => sortRec(n.children))
+  }
+  sortRec(roots)
+  return roots
+}
+
+/// <summary>展开/折叠工具栏用：把整棵树的所有 id 拍平成数组。</summary>
+function collectAllIds(nodes: readonly TreeMenuNode[]): string[] {
+  const ids: string[] = []
+  const walk = (arr: readonly TreeMenuNode[]) => {
+    arr.forEach((n) => {
+      ids.push(n.id)
+      walk(n.children)
+    })
+  }
+  walk(nodes)
+  return ids
+}
+
+/// <summary>从树里收集某节点及其所有后代的 id，用来在父菜单候选里屏蔽自身与子孙。</summary>
+export function collectDescendantIds(
+  nodes: readonly TreeMenuNode[],
+  id: string,
+): Set<string> {
+  const result = new Set<string>([id])
+  const findAndWalk = (arr: readonly TreeMenuNode[]): boolean => {
+    for (const n of arr) {
+      if (n.id === id) {
+        const walk = (sub: readonly TreeMenuNode[]) => {
+          sub.forEach((s) => {
+            result.add(s.id)
+            walk(s.children)
+          })
+        }
+        walk(n.children)
+        return true
+      }
+      if (findAndWalk(n.children)) return true
+    }
+    return false
+  }
+  findAndWalk(nodes)
+  return result
+}
+
+/// <summary>菜单管理页：CRUD 菜单配置，树形表格 + 展开折叠工具栏 + 父菜单候选屏蔽子孙。</summary>
 export function MenuManagement() {
   const { data: items = [], isPending } = useMenuConfigs()
+  const { data: allRoles = [] } = useRoles()
   const createMutation = useCreateMenuConfig()
   const updateMutation = useUpdateMenuConfig()
   const deleteMutation = useDeleteMenuConfig()
   const [editing, setEditing] = useState<MenuConfigDto | null>(null)
   const [formData, setFormData] = useState<MenuForm>(emptyForm)
   const [formOpen, setFormOpen] = useState(false)
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([])
 
-  const permissions = useMemo(() => [...listPermissions({ id: 'fixture', userName: 'fixture', roles: ['Admin'] })], [])
+  const roleOptions = useMemo(
+    () => [...ALL_ROLES, ...allRoles.map((r) => r.name)].filter(
+      (role, index, array) => array.indexOf(role) === index,
+    ),
+    [allRoles],
+  )
 
-  // 父项候选：排除自身，避免循环。
+  const treeData = useMemo(() => buildMenuTree(items), [items])
+  const allKeys = useMemo(() => collectAllIds(treeData), [treeData])
+
+  // 数据首次到位时默认展开全部。用 join 后的字符串当依赖，避免 allKeys 数组引用变化触发循环。
+  const allKeysKey = allKeys.join('|')
+  useEffect(() => {
+    setExpandedKeys(allKeys)
+  }, [allKeysKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 父项候选：排除自身与所有后代，避免把父选成自己的子孙形成环。
+  const excludedIds = useMemo(() => {
+    if (editing === null) return new Set<string>()
+    return collectDescendantIds(buildMenuTree(items), editing.id)
+  }, [items, editing])
   const parentCandidates = useMemo(
-    () => (editing ? items.filter((item) => item.id !== editing.id) : items),
-    [items, editing],
+    () => items.filter((item) => !excludedIds.has(item.id)),
+    [items, excludedIds],
   )
 
   function openCreate() {
@@ -61,7 +166,7 @@ export function MenuManagement() {
       key: item.key,
       label: item.label,
       icon: item.icon,
-      permission: item.permission,
+      roles: item.roles,
       parentId: item.parentId,
       sortOrder: item.sortOrder,
       isEnabled: item.isEnabled,
@@ -82,7 +187,7 @@ export function MenuManagement() {
       key: formData.key.trim(),
       label: formData.label.trim(),
       icon: formData.icon || null,
-      permission: formData.permission || null,
+      roles: formData.roles,
       parentId: formData.parentId || null,
       sortOrder: formData.sortOrder,
       isEnabled: formData.isEnabled,
@@ -110,9 +215,23 @@ export function MenuManagement() {
     }
   }
 
-  const columns: ColumnsType<MenuConfigDto> = [
+  const columns: ColumnsType<TreeMenuNode> = [
     { title: 'Key', dataIndex: 'key', key: 'key', width: 160 },
-    { title: '显示名称', dataIndex: 'label', key: 'label', width: 140 },
+    {
+      title: '显示名称',
+      dataIndex: 'label',
+      key: 'label',
+      width: 220,
+      render: (label: string, node) => {
+        const isRoot = node.parentId === null
+        return (
+          <Space size={6}>
+            <Tag color={isRoot ? 'default' : 'default'}>{isRoot ? '顶级' : '子级'}</Tag>
+            <span>{label}</span>
+          </Space>
+        )
+      },
+    },
     {
       title: '图标',
       dataIndex: 'icon',
@@ -121,14 +240,22 @@ export function MenuManagement() {
       render: (icon: string | null) => (icon ? <Tag>{icon}</Tag> : '-'),
     },
     {
-      title: '所需权限',
-      dataIndex: 'permission',
-      key: 'permission',
-      width: 160,
-      render: (permission: string | null) => (
-        <Tag color="blue" title={permission ?? undefined}>
-          {permissionLabel(permission)}
-        </Tag>
+      title: '可见角色',
+      dataIndex: 'roles',
+      key: 'roles',
+      width: 220,
+      render: (roles: string[]) => (
+        <Space wrap>
+          {roles.length === 0 ? (
+            <Tag color="green">所有人</Tag>
+          ) : (
+            roles.map((role) => (
+              <Tag key={role} color="blue">
+                {role}
+              </Tag>
+            ))
+          )}
+        </Space>
       ),
     },
     {
@@ -156,15 +283,24 @@ export function MenuManagement() {
     {
       title: '操作',
       key: 'actions',
-      width: 160,
+      width: 200,
       render: (_value, item) => (
         <Space>
           <Button type="link" size="small" onClick={() => openEdit(item)}>
             编辑
           </Button>
-          <Button type="link" size="small" danger onClick={() => handleDelete(item)}>
-            删除
-          </Button>
+          <Popconfirm
+            title="删除菜单项"
+            description={`确认删除菜单项 ${item.label}？该操作不可撤销。`}
+            okText="确认删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true, loading: deleteMutation.isPending }}
+            onConfirm={() => handleDelete(item)}
+          >
+            <Button type="link" size="small" danger>
+              删除
+            </Button>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -177,13 +313,24 @@ export function MenuManagement() {
         <Button type="primary" onClick={openCreate}>
           新建菜单项
         </Button>
+        <Button onClick={() => setExpandedKeys(allKeys)} disabled={allKeys.length === 0}>
+          展开全部
+        </Button>
+        <Button onClick={() => setExpandedKeys([])} disabled={expandedKeys.length === 0}>
+          折叠全部
+        </Button>
       </div>
-      <Table<MenuConfigDto>
+      <Table<TreeMenuNode>
         rowKey="id"
         loading={isPending}
-        dataSource={items}
+        dataSource={treeData}
         columns={columns}
-        pagination={{ pageSize: 20, showSizeChanger: false }}
+        pagination={{ pageSize: 50, showSizeChanger: false }}
+        expandable={{
+          expandedRowKeys: expandedKeys,
+          onExpandedRowsChange: (keys) => setExpandedKeys(keys as string[]),
+          childrenColumnName: 'children',
+        }}
       />
 
       <Modal
@@ -209,22 +356,27 @@ export function MenuManagement() {
             />
           </Form.Item>
           <Form.Item label="图标">
-            <Select
+            <AutoComplete
               allowClear
-              value={formData.icon}
-              onChange={(value) => setFormData((prev) => ({ ...prev, icon: value || null }))}
+              value={formData.icon ?? undefined}
+              onChange={(value) =>
+                setFormData((prev) => ({ ...prev, icon: value ? value.trim() : null }))
+              }
               options={AVAILABLE_ICONS.map((icon) => ({ value: icon, label: icon }))}
+              placeholder="如 DashboardOutlined，或留空"
+              filterOption={(input, option) =>
+                (option?.value as string).toLowerCase().includes(input.toLowerCase())
+              }
             />
           </Form.Item>
-          <Form.Item label="所需权限（空 = 所有人可见）">
+          <Form.Item label="可见角色（空 = 所有人可见）">
             <Select
+              mode="multiple"
               allowClear
-              value={formData.permission}
-              onChange={(value) => setFormData((prev) => ({ ...prev, permission: value || null }))}
-              options={permissions.map((permission) => ({
-                value: permission,
-                label: permissionLabel(permission),
-              }))}
+              value={formData.roles}
+              onChange={(value) => setFormData((prev) => ({ ...prev, roles: value }))}
+              options={roleOptions.map((role) => ({ value: role, label: role }))}
+              placeholder="选择可见角色"
             />
           </Form.Item>
           <Form.Item label="父菜单（空 = 顶级）">

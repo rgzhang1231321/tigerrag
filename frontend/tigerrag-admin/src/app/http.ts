@@ -145,5 +145,5 @@ async function parseEnvelope(response: Response): Promise<ApiEnvelope<unknown>> 
 /// <summary>React Query 缓存键工厂；调用方按业务模块命名空间扩展。</summary>
 export const queryKeys = {
   users: ['users'] as const,
-  roles: ['users', 'roles'] as const,
+  roles: ['roles'] as const,
 }

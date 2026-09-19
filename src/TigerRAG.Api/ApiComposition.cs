@@ -1,12 +1,15 @@
 using TigerRAG.Api.Filters;
 using TigerRAG.Api.Hubs;
 using TigerRAG.Api.Middleware;
+using TigerRAG.Api.Security;
 using System.Net;
 using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using TigerRAG.Application.Security;
 using TigerRAG.Infrastructure.Logging;
@@ -40,6 +43,7 @@ public static class ApiComposition
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
+                var clockSkewSeconds = configuration.GetValue<int>("Jwt:ClockSkewSeconds", 30);
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuer = true,
@@ -48,17 +52,16 @@ public static class ApiComposition
                     ValidateIssuerSigningKey = true,
                     ValidIssuer = configuration["Jwt:Issuer"] ?? "TigerRAG",
                     ValidAudience = configuration["Jwt:Audience"] ?? "TigerRAG",
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey))
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+                    // 默认 300s 太宽，对称密钥 + NTP 同步环境收紧到 30s 即足以吸收漂移。
+                    ClockSkew = TimeSpan.FromSeconds(clockSkewSeconds)
+                };
+                options.Events = new JwtBearerEvents
+                {
+                    OnTokenValidated = JwtRevocationValidator.OnTokenValidated
                 };
             });
-        services.AddAuthorization(options =>
-        {
-            foreach (var permission in SystemPermissions.All)
-            {
-                options.AddPolicy(permission, policy =>
-                    policy.RequireRole(RolePermissionMap.RolesFor(permission)));
-            }
-        });
+        // 授权判定统一走 role claim（[Authorize(Roles = ...)]），无需注册 permission 策略。
 
         // 反向代理场景：必须显式配置 KnownIPNetworks/ForwardedFor 信任范围，
         // 否则任意客户端可伪造 X-Forwarded-* 头绕过 TLS 标记。仅读 X-Forwarded-Proto，
