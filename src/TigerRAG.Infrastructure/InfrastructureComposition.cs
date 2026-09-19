@@ -50,12 +50,17 @@ public static class InfrastructureComposition
         services.AddScoped<IUserSecurityStampRotator, UserSecurityStampRotator>();
         services.AddScoped<IDocumentAccessDal, DocumentAccessDal>();
         services.AddScoped<IMenuConfigDal, MenuConfigDal>();
+        services.AddScoped<IRoleMenuReference, MenuReferenceDal>();
         services.AddScoped<IRoleAdmin, RoleAdminDal>();
         services.AddScoped<RoleAdminService>();
         services.AddScoped<IAccessTokenIssuer, JwtAccessTokenIssuer>();
         services.AddScoped<AuthService>();
         services.AddScoped<UserRoleService>();
         services.AddScoped<DocumentAccessService>();
+        services.AddScoped<IStatisticsDal, StatisticsDal>();
+        services.AddScoped<IStatisticsService, StatisticsService>();
+        services.AddScoped<IApiLogDal, ApiLogDal>();
+        services.AddScoped<ApiLogService>();
 
         services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(
             configuration.GetConnectionString("Redis")

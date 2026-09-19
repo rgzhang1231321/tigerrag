@@ -40,6 +40,9 @@ const MenuManagementPage = lazy(() =>
 const ReportsPage = lazy(() =>
   import('../features/reports/ReportsPage').then((module) => ({ default: module.ReportsPage })),
 )
+const LogsPage = lazy(() =>
+  import('../features/logs/LogsPage').then((module) => ({ default: module.LogsPage })),
+)
 
 const { Header, Content, Sider } = Layout
 
@@ -274,6 +277,16 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
                 <RequireRole roles={['Admin', 'Auditor']}>
                   <Suspense fallback={<Spin className="app-loading" />}>
                     <ReportsPage />
+                  </Suspense>
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/logs"
+              element={
+                <RequireRole roles={['Admin']}>
+                  <Suspense fallback={<Spin className="app-loading" />}>
+                    <LogsPage />
                   </Suspense>
                 </RequireRole>
               }
