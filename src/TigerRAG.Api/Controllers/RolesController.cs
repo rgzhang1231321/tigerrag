@@ -40,7 +40,7 @@ public sealed class RolesController(RoleAdminService roleAdmin) : ControllerBase
         }
     }
 
-    /// <summary>删除自定义角色：系统保留名 / 格式非法返回 40000；角色不存在返回 40400；删除后受影响用户的 stamp 已被轮换。</summary>
+    /// <summary>删除自定义角色：系统保留名 / 格式非法返回 40000；角色不存在返回 40400；DAL 层数据库冲突返回 40900；删除后受影响用户的 stamp 已被轮换。</summary>
     [HttpPost("{name}/delete")]
     public async Task<IActionResult> Delete(string name, CancellationToken cancellationToken)
     {
@@ -48,12 +48,38 @@ public sealed class RolesController(RoleAdminService roleAdmin) : ControllerBase
         {
             var deleted = await roleAdmin.DeleteAsync(name, cancellationToken);
             return deleted
-                ? Ok(ApiResponse<object?>.Success(null))
+                ? Ok(ApiResponse.Success((object?)null))
                 : Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, $"角色 {name} 不存在"));
         }
         catch (ArgumentException error)
         {
             return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation, error.Message));
+        }
+        catch (InvalidOperationException error)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Conflict, error.Message));
+        }
+    }
+
+    /// <summary>重命名角色：Admin 受保护返回 40000；新名格式非法 / 已被占用返回 40000；改名后受影响用户被强制下线。</summary>
+    [HttpPost("{name}/rename")]
+    public async Task<ActionResult<ApiResponse<RoleDto>>> Rename(
+        string name,
+        RenameRoleRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var role = await roleAdmin.RenameAsync(name, request, cancellationToken);
+            return Ok(ApiResponse.Success(role, "角色重命名成功"));
+        }
+        catch (ArgumentException error)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation, error.Message));
+        }
+        catch (InvalidOperationException error)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Conflict, error.Message));
         }
     }
 }

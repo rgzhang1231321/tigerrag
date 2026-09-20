@@ -1,3 +1,4 @@
+import { message } from 'antd'
 import { refreshSession } from '../features/auth/authApi'
 import { useAuthStore } from '../features/auth/authStore'
 
@@ -11,6 +12,12 @@ export class ApiError extends Error {
     super(message)
     this.name = 'ApiError'
   }
+}
+
+/// <summary>全局错误弹框：接口失败时统一以 antd message 提示；401 登出静默处理不弹。</summary>
+function showError(error: ApiError) {
+  if (error.code === 40100) return
+  message.error(error.message)
 }
 
 export interface HttpOptions extends Omit<RequestInit, 'body'> {
@@ -54,9 +61,12 @@ export async function http<T>(path: string, options: HttpOptions = {}): Promise<
   try {
     return await execute<T>(path, requestInit, retryOnAuth)
   } catch (error) {
-    if (error instanceof ApiError && error.code === 40100 && retryOnAuth) {
-      // execute 内部已尝试过一次刷新；这里只负责把"刷新也救不回来"翻译成登出。
-      useAuthStore.getState().clear()
+    if (error instanceof ApiError) {
+      showError(error)
+      if (error.code === 40100 && retryOnAuth) {
+        // execute 内部已尝试过一次刷新；这里只负责把"刷新也救不回来"翻译成登出。
+        useAuthStore.getState().clear()
+      }
     }
     throw error
   }
@@ -93,7 +103,13 @@ async function execute<T>(
   init: RequestInit,
   retryOnAuth: boolean,
 ): Promise<T> {
-  const response = await fetch(path, init)
+  let response: Response
+  try {
+    response = await fetch(path, init)
+  } catch {
+    // connection refused / network down
+    throw new ApiError(50000, '服务暂不可用，请检查网络或稍后重试')
+  }
   const envelope = (await parseEnvelope(response)) as ApiEnvelope<T>
   if (envelope.flag) {
     return envelope.data as T
@@ -134,11 +150,22 @@ async function tryRefresh(): Promise<boolean> {
 }
 
 async function parseEnvelope(response: Response): Promise<ApiEnvelope<unknown>> {
+  // 网络层或协议层失败：返回友好提示，替代 JSON.parse TypeError 原始堆栈
+  if (!response.ok) {
+    throw new ApiError(50000, `服务暂不可用（HTTP ${response.status}）`, response.status)
+  }
+
+  // 2xx 但 body 为空或非 JSON：后端未启动或代理层异常
+  const text = await response.text()
+  if (!text || text.trim().length === 0) {
+    throw new ApiError(50000, '服务暂不可用：响应内容为空', response.status)
+  }
+
   try {
-    return (await response.json()) as ApiEnvelope<unknown>
+    return JSON.parse(text) as ApiEnvelope<unknown>
   } catch {
-    // 传输层失败：原样抛 ApiError，标记 httpStatus 以便上层决定是否重试。
-    throw new ApiError(50000, '认证服务暂不可用', response.status)
+    // 非 JSON 响应：后端未启动/代理层异常
+    throw new ApiError(50000, '服务暂不可用或响应格式异常', response.status)
   }
 }
 

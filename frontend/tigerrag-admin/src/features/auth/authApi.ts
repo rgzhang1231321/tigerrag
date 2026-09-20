@@ -45,12 +45,16 @@ export async function refreshSession(): Promise<AuthSession> {
 }
 
 export async function logout(): Promise<void> {
-  const response = await fetch('/api/auth/logout', {
-    method: 'POST',
-    credentials: 'include',
-  })
-  const envelope = (await response.json()) as ApiEnvelope<null>
-  ensureSuccess(envelope, '退出登录失败')
+  try {
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+    })
+    const envelope = (await response.json()) as ApiEnvelope<null>
+    ensureSuccess(envelope, '退出登录失败')
+  } catch {
+    throw new Error('服务暂不可用，请检查网络或稍后重试')
+  }
 }
 
 /// <summary>修改当前登录用户的密码。成功后服务端会删除 refresh cookie 并撤销全部会话，调用方应引导重新登录。</summary>
@@ -62,40 +66,59 @@ export async function changePassword(currentPassword: string, newPassword: strin
   const salt = await fetchSalt(userName)
   const currentPasswordHash = md5(currentPassword + salt).toLowerCase()
   const newPasswordHash = md5(newPassword + salt).toLowerCase()
-  const response = await fetch('/api/auth/change-password', {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${useAuthStore.getState().accessToken ?? ''}`,
-    },
-    body: JSON.stringify({ currentPasswordHash, newPasswordHash }),
-  })
-  const envelope = (await response.json()) as ApiEnvelope<null>
-  ensureSuccess(envelope, '修改密码失败')
+  try {
+    const response = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${useAuthStore.getState().accessToken ?? ''}`,
+      },
+      body: JSON.stringify({ currentPasswordHash, newPasswordHash }),
+    })
+    const envelope = (await response.json()) as ApiEnvelope<null>
+    ensureSuccess(envelope, '修改密码失败')
+  } catch {
+    throw new Error('服务暂不可用，请检查网络或稍后重试')
+  }
 }
 
 async function fetchSalt(userName: string): Promise<string> {
-  const response = await fetch('/api/auth/salt', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userName }),
-  })
-  const envelope = (await response.json()) as ApiEnvelope<{ salt: string } | null>
-  if (!envelope.flag || !envelope.data) {
-    throw new Error(envelope.message || '用户不存在')
-  }
+  try {
+    const response = await fetch('/api/auth/salt', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userName }),
+    })
+    if (!response.ok) {
+      throw new Error(`服务暂不可用（HTTP ${response.status}）`)
+    }
+    const envelope = (await response.json()) as ApiEnvelope<{ salt: string } | null>
+    if (!envelope.flag || !envelope.data) {
+      throw new Error(envelope.message || '用户不存在')
+    }
 
-  return envelope.data.salt
+    return envelope.data.salt
+  } catch (error) {
+    if (error instanceof Error && (error.message.startsWith('服务暂不可用') || error.message === '用户不存在')) {
+      throw error
+    }
+    throw new Error('服务暂不可用，请检查网络或稍后重试')
+  }
 }
 
 async function request(path: string, init: RequestInit): Promise<AuthSession> {
-  const response = await fetch(path, {
-    ...init,
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...init.headers },
-  })
+  let response: Response
+  try {
+    response = await fetch(path, {
+      ...init,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...init.headers },
+    })
+  } catch {
+    throw new Error('服务暂不可用，请检查网络或稍后重试')
+  }
   if (!response.ok) {
     throw new Error('认证服务暂不可用')
   }

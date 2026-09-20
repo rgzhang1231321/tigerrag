@@ -19,8 +19,8 @@ function makeClient() {
   })
 }
 
-function jsonResponse(body: unknown) {
-  return { ok: true, status: 200, json: async () => body } as Response
+function jsonResponse(body: unknown): Response {
+  return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) } as Response
 }
 
 function envelope<T>(data: T, flag = true, message = 'success') {
@@ -37,9 +37,27 @@ function envelope<T>(data: T, flag = true, message = 'success') {
 }
 
 const seed = [
-  { name: 'Admin', isSystem: true },
-  { name: 'Auditor', isSystem: true },
-  { name: 'CustomRole', isSystem: false },
+  {
+    name: 'Admin',
+    isSystem: true,
+    userCount: 1,
+    menuCount: 0,
+    menuNames: [],
+  },
+  {
+    name: 'Auditor',
+    isSystem: false,
+    userCount: 2,
+    menuCount: 1,
+    menuNames: ['审计日志'],
+  },
+  {
+    name: 'KbManager',
+    isSystem: false,
+    userCount: 0,
+    menuCount: 2,
+    menuNames: ['知识库', '问答工作台'],
+  },
 ]
 
 describe('RoleListCard', () => {
@@ -56,7 +74,7 @@ describe('RoleListCard', () => {
     useAuthStore.getState().clear()
   })
 
-  it('lists all roles with a 系统 tag on reserved ones', async () => {
+  it('lists roles with reference counts and associated menu names', async () => {
     vi.mocked(fetch).mockImplementation(((input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString()
       if (url === '/api/roles/list') return Promise.resolve(jsonResponse(envelope(seed)))
@@ -67,11 +85,17 @@ describe('RoleListCard', () => {
 
     await waitFor(() => expect(screen.getByText('Admin')).toBeInTheDocument())
     expect(screen.getByText('Auditor')).toBeInTheDocument()
-    expect(screen.getByText('CustomRole')).toBeInTheDocument()
-    expect(screen.getAllByText('系统').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('KbManager')).toBeInTheDocument()
+    // 用户引用数
+    expect(screen.getByText(/用户 2/)).toBeInTheDocument()
+    expect(screen.getByText(/菜单 1/)).toBeInTheDocument()
+    // 关联菜单渲染为 Tag
+    expect(screen.getByText('审计日志')).toBeInTheDocument()
+    expect(screen.getByText('知识库')).toBeInTheDocument()
+    expect(screen.getByText('问答工作台')).toBeInTheDocument()
   })
 
-  it('creates a custom role when the user submits a valid name', async () => {
+  it('opens modal for create when 新建角色 clicked and submits valid name', async () => {
     let live = seed.slice()
     vi.mocked(fetch).mockImplementation(((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString()
@@ -80,8 +104,27 @@ describe('RoleListCard', () => {
         return Promise.resolve(jsonResponse(envelope(live)))
       }
       if (url === '/api/roles' && init?.method === 'POST') {
-        live = [...live, { name: body.name, isSystem: false }]
-        return Promise.resolve(jsonResponse(envelope({ name: body.name, isSystem: false })))
+        live = [
+          ...live,
+          {
+            name: body.name,
+            isSystem: false,
+            userCount: 0,
+            menuCount: 0,
+            menuNames: [],
+          },
+        ]
+        return Promise.resolve(
+          jsonResponse(
+            envelope({
+              name: body.name,
+              isSystem: false,
+              userCount: 0,
+              menuCount: 0,
+              menuNames: [],
+            }),
+          ),
+        )
       }
       throw new Error(`Unexpected fetch: ${url}`)
     }) as never)
@@ -89,14 +132,61 @@ describe('RoleListCard', () => {
     render(<RoleListCard />, { wrapper: wrap(makeClient()) })
     await waitFor(() => expect(screen.getByText('Admin')).toBeInTheDocument())
 
-    const input = screen.getByPlaceholderText('如 CustomRole')
-    fireEvent.change(input, { target: { value: 'NewRole' } })
     fireEvent.click(screen.getByRole('button', { name: '新建角色' }))
+    const input = await screen.findByPlaceholderText('如 CustomRole')
+    fireEvent.change(input, { target: { value: 'NewRole' } })
+    fireEvent.click(await screen.findByTestId('role-modal-ok'))
 
     await waitFor(() => expect(screen.getByText('NewRole')).toBeInTheDocument())
   })
 
-  it('disables delete on system roles and wires Popconfirm for custom ones', async () => {
+  it('opens modal pre-filled with current name on 编辑 and posts rename', async () => {
+    let live = seed.slice()
+    vi.mocked(fetch).mockImplementation(((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const body = init?.body ? JSON.parse(String(init.body)) : null
+      if (url === '/api/roles/list') {
+        return Promise.resolve(jsonResponse(envelope(live)))
+      }
+      if (url.endsWith('/rename') && init?.method === 'POST') {
+        live = live.map((role) =>
+          role.name === 'Auditor'
+            ? {
+                ...role,
+                name: body.name,
+              }
+            : role,
+        )
+        return Promise.resolve(
+          jsonResponse(
+            envelope({
+              name: body.name,
+              isSystem: false,
+              userCount: 0,
+              menuCount: 0,
+              menuNames: [],
+            }),
+          ),
+        )
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as never)
+
+    render(<RoleListCard />, { wrapper: wrap(makeClient()) })
+    await waitFor(() => expect(screen.getByText('Auditor')).toBeInTheDocument())
+
+    const auditorRow = screen.getByText('Auditor').closest('tr')!
+    fireEvent.click(auditorRow.querySelector('button')!)
+
+    const input = await screen.findByDisplayValue('Auditor')
+    fireEvent.change(input, { target: { value: 'AuditLead' } })
+    fireEvent.click(await screen.findByTestId('role-modal-ok'))
+
+    await waitFor(() => expect(screen.getByText('AuditLead')).toBeInTheDocument())
+    expect(screen.queryByText('Auditor')).not.toBeInTheDocument()
+  })
+
+  it('disables edit/delete on system role but exposes delete for non-system', async () => {
     vi.mocked(fetch).mockImplementation(((input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString()
       if (url === '/api/roles/list') return Promise.resolve(jsonResponse(envelope(seed)))
@@ -106,15 +196,21 @@ describe('RoleListCard', () => {
     render(<RoleListCard />, { wrapper: wrap(makeClient()) })
     await waitFor(() => expect(screen.getByText('Admin')).toBeInTheDocument())
 
-    const adminRow = screen.getByText('Admin').closest('tr')
-    expect(adminRow).not.toBeNull()
-    const adminDelete = adminRow!.querySelector('button[disabled]')
-    expect(adminDelete).not.toBeNull()
+    const adminRow = screen.getByText('Admin').closest('tr')!
+    const adminEdit = Array.from(adminRow.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('编辑'),
+    )
+    expect(adminEdit?.disabled).toBe(true)
 
-    const customRow = screen.getByText('CustomRole').closest('tr')
-    expect(customRow).not.toBeNull()
-    const customDelete = customRow!.querySelector('button:not([disabled])')
-    expect(customDelete).not.toBeNull()
+    const kbRow = screen.getByText('KbManager').closest('tr')!
+    const kbEdit = Array.from(kbRow.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('编辑'),
+    )
+    const kbDelete = Array.from(kbRow.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('删除'),
+    )
+    expect(kbEdit?.disabled).toBeFalsy()
+    expect(kbDelete?.disabled).toBeFalsy()
   })
 
   it('surfaces server validation errors as a message', async () => {
@@ -134,13 +230,13 @@ describe('RoleListCard', () => {
     render(<RoleListCard />, { wrapper: wrap(makeClient()) })
     await waitFor(() => expect(screen.getByText('Admin')).toBeInTheDocument())
 
-    fireEvent.change(screen.getByPlaceholderText('如 CustomRole'), {
-      target: { value: 'bad-role' },
-    })
     fireEvent.click(screen.getByRole('button', { name: '新建角色' }))
+    const input = await screen.findByPlaceholderText('如 CustomRole')
+    fireEvent.change(input, { target: { value: 'NewRole' } })
+    fireEvent.click(await screen.findByTestId('role-modal-ok'))
 
     await waitFor(() =>
-      expect(screen.getByText('角色名必须以大写字母开头')).toBeInTheDocument(),
+      expect(screen.getAllByText('角色名必须以大写字母开头').length).toBeGreaterThan(0),
     )
   })
 })

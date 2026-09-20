@@ -165,7 +165,9 @@ public sealed class AuthController(AuthService authService) : ControllerBase
     {
         HttpOnly = true,
         Secure = Request.IsHttps,
-        SameSite = SameSiteMode.Strict,
+        // Lax：同站 fetch（含 SPA 硬刷新）都发；跨站仅顶级导航发，仍防 CSRF。
+        // Strict 在 SPA + 反向代理场景下，硬刷新触发的 fetch 有时被浏览器视为非顶级导航而不发 Cookie。
+        SameSite = SameSiteMode.Lax,
         Expires = expiresAt,
         Path = "/api/auth"
     };

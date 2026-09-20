@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
-using System.Text.Json;
 using TigerRAG.Application.Security;
 using TigerRAG.Infrastructure.Identity;
 using TigerRAG.Infrastructure.Persistence.Entities;
@@ -23,6 +22,7 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
     public DbSet<audit_log_record> AuditLogs => Set<audit_log_record>();
     public DbSet<refresh_token_record> RefreshTokens => Set<refresh_token_record>();
     public DbSet<menu_config_record> MenuConfigs => Set<menu_config_record>();
+    public DbSet<api_log_record> ApiLogs => Set<api_log_record>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -40,6 +40,7 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
         ConfigureAudit(builder);
         ConfigureRefreshTokens(builder);
         ConfigureMenuConfigs(builder);
+        ConfigureApiLogs(builder);
         SeedRoles(builder);
     }
 
@@ -131,20 +132,33 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
             entity.Property(value => value.Key).HasMaxLength(100);
             entity.Property(value => value.Label).HasMaxLength(100);
             entity.Property(value => value.Icon).HasMaxLength(100);
-            // string[] 与 jsonb 互转：写入序列化为 JSON 文本，读取反序列化；空数组落库为 "[]"。
             entity.Property(value => value.Roles)
                 .HasConversion(
-                    v => JsonSerializer.Serialize(v, JsonOptions.Default),
-                    v => JsonSerializer.Deserialize<string[]>(v, JsonOptions.Default) ?? Array.Empty<string>())
-                .HasColumnType("jsonb");
+                    v => string.Join(",", v ?? Array.Empty<string>()),
+                    v => (v ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+                .HasMaxLength(500);
             entity.HasIndex(value => value.Key).IsUnique();
             entity.HasOne<menu_config_record>().WithMany().HasForeignKey(value => value.ParentId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 
-    private static class JsonOptions
+    private static void ConfigureApiLogs(ModelBuilder builder)
     {
-        public static readonly JsonSerializerOptions Default = new();
+        builder.Entity<api_log_record>(entity =>
+        {
+            entity.ToTable("api_log");
+            entity.Property(value => value.Id).HasColumnName("id");
+            entity.Property(value => value.Timestamp).HasColumnName("timestamp");
+            entity.Property(value => value.Level).HasColumnName("level").HasMaxLength(16);
+            entity.Property(value => value.RequestId).HasColumnName("request_id").HasMaxLength(64);
+            entity.Property(value => value.SourceContext).HasColumnName("source_context").HasMaxLength(500);
+            entity.Property(value => value.RequestPath).HasColumnName("request_path").HasMaxLength(500);
+            entity.Property(value => value.Message).HasColumnName("message");
+            entity.Property(value => value.Exception).HasColumnName("exception");
+            entity.Property(value => value.ElapsedMs).HasColumnName("elapsed_ms");
+            entity.HasIndex(value => value.RequestId);
+            entity.HasIndex(value => value.Timestamp);
+        });
     }
 
     // 固定 5 个角色硬编码进种子数据；与 SystemRoles 保持一致。

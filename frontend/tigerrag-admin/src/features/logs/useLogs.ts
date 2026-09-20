@@ -8,7 +8,7 @@ export function queryLogsKeys() {
 /// <summary>查询日志列表。</summary>
 export function useApiLogs(request: ApiLogQueryRequest) {
   return useQuery({
-    queryKey: [...queryLogsKeys(), request.keyword, request.level, request.page, request.pageSize],
+    queryKey: [...queryLogsKeys(), request.requestId, request.keyword, request.level, request.page, request.pageSize],
     queryFn: () => listApiLogs(request),
     staleTime: 30_000,
   })

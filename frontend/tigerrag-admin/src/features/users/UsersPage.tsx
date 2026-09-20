@@ -102,7 +102,9 @@ export function UsersPage() {
 
   return (
     <main>
-      <h2 className="page-heading">用户管理</h2>
+      <div className="page-title-bar">
+        <span className="page-title">用户管理</span>
+      </div>
       <div className="users-toolbar">
         <Input.Search
           allowClear
@@ -298,13 +300,13 @@ function AssignRolesDialog({
   onCancel,
   onAssigned,
 }: AssignRolesDialogProps) {
-  const initialRoles = useMemo(() => (target === null ? [] : [...target.roles]), [target])
+  const initialRoles = useMemo(() => (target === null ? [] : [...(target.roles ?? [])]), [target])
   const [selected, setSelected] = useState<string[]>(initialRoles)
   // 每次切换 target 时重置 selected：target 变化是唯一触发点。
   const [lastTargetId, setLastTargetId] = useState<string | null>(target?.id ?? null)
   if (target !== null && target.id !== lastTargetId) {
     setLastTargetId(target.id)
-    setSelected([...target.roles])
+    setSelected([...(target.roles ?? [])])
   }
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '../auth/authStore'
-import { useCreateRole, useDeleteRole, useRoles } from './useRoles'
+import { useCreateRole, useDeleteRole, useRoles, useUpdateRole } from './useRoles'
 
 function wrap(client: QueryClient) {
   return ({ children }: { children: React.ReactNode }) => (
@@ -37,8 +37,20 @@ function envelope<T>(data: T, flag = true, message = 'success') {
 }
 
 const seed = [
-  { name: 'Admin', isSystem: true },
-  { name: 'CustomRole', isSystem: false },
+  {
+    name: 'Admin',
+    isSystem: true,
+    userCount: 1,
+    menuCount: 0,
+    menuNames: [],
+  },
+  {
+    name: 'CustomRole',
+    isSystem: false,
+    userCount: 0,
+    menuCount: 0,
+    menuNames: [],
+  },
 ]
 
 describe('useRoles', () => {
@@ -87,7 +99,17 @@ describe('useRoles', () => {
         return Promise.resolve(jsonResponse(envelope(seed)))
       }
       if (url === '/api/roles' && init?.method === 'POST') {
-        return Promise.resolve(jsonResponse(envelope({ name: body.name, isSystem: false })))
+        return Promise.resolve(
+          jsonResponse(
+            envelope({
+              name: body.name,
+              isSystem: false,
+              userCount: 0,
+              menuCount: 0,
+              menuNames: [],
+            }),
+          ),
+        )
       }
       throw new Error(`Unexpected fetch: ${url}`)
     }) as never)
@@ -131,6 +153,55 @@ describe('useRoles', () => {
     await act(async () => {
       await result.current.remove.mutateAsync('CustomRole')
     })
+    await waitFor(() => expect(rolesCallCount).toBeGreaterThan(1))
+  })
+
+  it('useUpdateRole invalidates the roles cache after rename', async () => {
+    let rolesCallCount = 0
+    let renameSeen: { originalName: string; body: unknown } | null = null
+    vi.mocked(fetch).mockImplementation(((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const body = init?.body ? JSON.parse(String(init.body)) : null
+      if (url === '/api/roles/list') {
+        rolesCallCount++
+        return Promise.resolve(jsonResponse(envelope(seed)))
+      }
+      if (url.endsWith('/rename') && init?.method === 'POST') {
+        renameSeen = {
+          originalName: decodeURIComponent(url.split('/').slice(-2, -1)[0]!),
+          body,
+        }
+        return Promise.resolve(
+          jsonResponse(
+            envelope({
+              name: body.name,
+              isSystem: false,
+              userCount: 0,
+              menuCount: 0,
+              menuNames: [],
+            }),
+          ),
+        )
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as never)
+
+    const client = makeClient()
+    const { result } = renderHook(
+      () => ({ roles: useRoles(), update: useUpdateRole() }),
+      { wrapper: wrap(client) },
+    )
+    await waitFor(() => expect(result.current.roles.data).toEqual(seed))
+    expect(rolesCallCount).toBe(1)
+
+    await act(async () => {
+      await result.current.update.mutateAsync({
+        originalName: 'CustomRole',
+        name: 'RenamedRole',
+      })
+    })
+
+    expect(renameSeen).toEqual({ originalName: 'CustomRole', body: { name: 'RenamedRole' } })
     await waitFor(() => expect(rolesCallCount).toBeGreaterThan(1))
   })
 })

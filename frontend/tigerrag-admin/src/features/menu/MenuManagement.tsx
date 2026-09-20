@@ -308,7 +308,9 @@ export function MenuManagement() {
 
   return (
     <main>
-      <h2 className="page-heading">菜单管理</h2>
+      <div className="page-title-bar">
+        <span className="page-title">菜单管理</span>
+      </div>
       <div className="users-toolbar">
         <Button type="primary" onClick={openCreate}>
           新建菜单项

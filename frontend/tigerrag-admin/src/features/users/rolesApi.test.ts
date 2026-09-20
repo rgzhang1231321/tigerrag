@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../app/http'
-import { createRole, deleteRole, listRolesAll } from './rolesApi'
+import { createRole, deleteRole, listRolesAll, updateRole } from './rolesApi'
 
 interface CapturedCall {
   url: string
@@ -64,10 +64,16 @@ describe('rolesApi', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('listRolesAll POSTs /api/roles/list and unwraps role list with IsSystem flags', async () => {
+  it('listRolesAll POSTs /api/roles/list and unwraps role list with reference counts', async () => {
     const payload = [
-      { name: 'Admin', isSystem: true },
-      { name: 'CustomRole', isSystem: false },
+      { name: 'Admin', isSystem: true, userCount: 1, menuCount: 0, menuNames: [] },
+      {
+        name: 'Viewer',
+        isSystem: false,
+        userCount: 3,
+        menuCount: 2,
+        menuNames: ['问答工作台', '知识库'],
+      },
     ]
     const calls = setupFetchMock(() => envelope(payload))
     const result = await listRolesAll()
@@ -77,13 +83,49 @@ describe('rolesApi', () => {
   })
 
   it('createRole POSTs {name} to /api/roles', async () => {
-    const created = { name: 'CustomRole', isSystem: false }
+    const created = {
+      name: 'CustomRole',
+      isSystem: false,
+      userCount: 0,
+      menuCount: 0,
+      menuNames: [],
+    }
     const calls = setupFetchMock(() => envelope(created))
     const result = await createRole({ name: 'CustomRole' })
     expect(result).toEqual(created)
     expect(calls[0].url).toBe('/api/roles')
     expect(calls[0].method).toBe('POST')
     expect(calls[0].body).toEqual({ name: 'CustomRole' })
+  })
+
+  it('updateRole POSTs {name} to /api/roles/{name}/rename', async () => {
+    const updated = {
+      name: 'RenamedRole',
+      isSystem: false,
+      userCount: 1,
+      menuCount: 0,
+      menuNames: [],
+    }
+    const calls = setupFetchMock(() => envelope(updated))
+    const result = await updateRole('CustomRole', { name: 'RenamedRole' })
+    expect(result).toEqual(updated)
+    expect(calls[0].url).toBe('/api/roles/CustomRole/rename')
+    expect(calls[0].method).toBe('POST')
+    expect(calls[0].body).toEqual({ name: 'RenamedRole' })
+  })
+
+  it('updateRole URL-encodes original role name', async () => {
+    const calls = setupFetchMock(() =>
+      envelope({
+        name: 'NewRole',
+        isSystem: false,
+        userCount: 0,
+        menuCount: 0,
+        menuNames: [],
+      }),
+    )
+    await updateRole('Custom Role', { name: 'NewRole' })
+    expect(calls[0].url).toBe('/api/roles/Custom%20Role/rename')
   })
 
   it('deleteRole POSTs to /api/roles/{name}/delete with URL encoding', async () => {
@@ -103,5 +145,10 @@ describe('rolesApi', () => {
   it('deleteRole propagates not-found message via ApiError', async () => {
     setupFetchMock(() => envelope(null, false, '角色 Ghost 不存在'))
     await expect(deleteRole('Ghost')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('updateRole propagates conflict message via ApiError', async () => {
+    setupFetchMock(() => envelope(null, false, '角色 Other 已存在'))
+    await expect(updateRole('Custom', { name: 'Other' })).rejects.toThrow('已存在')
   })
 })

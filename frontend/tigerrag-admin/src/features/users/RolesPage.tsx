@@ -4,7 +4,9 @@ import { RoleListCard } from './RoleListCard'
 export function RolesPage() {
   return (
     <main>
-      <h2 className="page-heading">角色管理</h2>
+      <div className="page-title-bar">
+        <span className="page-title">角色管理</span>
+      </div>
       <RoleListCard />
     </main>
   )

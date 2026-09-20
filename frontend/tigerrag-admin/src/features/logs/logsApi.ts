@@ -21,6 +21,7 @@ export interface ApiLogQueryRequest {
   from?: string | null
   to?: string | null
   level?: string | null
+  requestId?: string | null
   keyword?: string | null
   page: number
   pageSize: number

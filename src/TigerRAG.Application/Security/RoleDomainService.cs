@@ -23,4 +23,7 @@ public static class RoleDomainService
 
     /// <summary>是否属于 5 个系统保留名之一。保留名禁删禁重建。</summary>
     public static bool IsReserved(string name) => SystemRoles.All.Contains(name);
+
+    /// <summary>是否是不可删除的 Admin 系统角色。前端 <c>permissions.ts</c> 编译期联合类型与后端 <c>[Authorize(Roles = "Admin")]</c> 强依赖。</summary>
+    public static bool IsAdmin(string name) => string.Equals(name, SystemRoles.Admin, StringComparison.Ordinal);
 }

@@ -512,5 +512,8 @@ public sealed class UserRoleServiceTests
 
         public Task<bool> DeleteAsync(string name, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+
+        public Task<bool> RenameAsync(string oldName, string newName, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 }

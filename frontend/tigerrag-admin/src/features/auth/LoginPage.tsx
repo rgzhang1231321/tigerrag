@@ -1,6 +1,7 @@
 import { LockOutlined, UserOutlined } from '@ant-design/icons'
 import { Alert, Button, Form, Input } from 'antd'
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { login } from './authApi'
 import type { AuthSession } from './authStore'
 
@@ -10,6 +11,7 @@ interface LoginValues {
 }
 
 export default function LoginPage({ onAuthenticated }: { onAuthenticated: (session: AuthSession) => void }) {
+  const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -18,6 +20,7 @@ export default function LoginPage({ onAuthenticated }: { onAuthenticated: (sessi
     setError(null)
     try {
       onAuthenticated(await login(values.userName, values.password))
+      navigate('/', { replace: true })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '登录失败')
     } finally {

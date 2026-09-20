@@ -84,7 +84,16 @@ public sealed class StatisticsDashboardTests : IClassFixture<TigerRagApiFactory>
         var data = body.RootElement.GetProperty("data");
         Assert.True(data.TryGetProperty("knowledgeBaseCount", out _));
         Assert.True(data.TryGetProperty("documentCount", out _));
+        Assert.True(data.TryGetProperty("indexedDocumentCount", out _));
+        Assert.True(data.TryGetProperty("processingDocumentCount", out _));
+        Assert.True(data.TryGetProperty("failedDocumentCount", out _));
         Assert.True(data.TryGetProperty("userCount", out _));
+        Assert.True(data.TryGetProperty("conversationCount", out _));
+        Assert.True(data.TryGetProperty("messageCount", out _));
+        Assert.True(data.TryGetProperty("totalTokens", out _));
+        Assert.True(data.TryGetProperty("recentWeekDocuments", out _));
+        Assert.True(data.TryGetProperty("documentsByKb", out _));
+        Assert.True(data.TryGetProperty("messagesPerDay", out _));
     }
 
     /// <summary>承载 stamp 与凭证的可写 DAL 替身；让 /api/auth/login 与 JWT 校验都通过。</summary>

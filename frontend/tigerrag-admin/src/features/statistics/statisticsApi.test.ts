@@ -16,7 +16,7 @@ describe('fetchDashboardMetrics', () => {
 
   afterEach(() => vi.unstubAllGlobals())
 
-  it('POST /api/statistics/dashboard and unwraps data', async () => {
+  it('POST /api/statistics/dashboard and unwraps data with all 11 fields', async () => {
     const payload = {
       knowledgeBaseCount: 3,
       documentCount: 10,
@@ -26,6 +26,19 @@ describe('fetchDashboardMetrics', () => {
       userCount: 5,
       conversationCount: 20,
       messageCount: 80,
+      totalTokens: 1234567,
+      recentWeekDocuments: [
+        { date: '2026-09-13', count: 2 },
+        { date: '2026-09-14', count: 5 },
+      ],
+      documentsByKb: [
+        { knowledgeBaseId: 'kb-1', knowledgeBaseName: '产品文档', documentCount: 6 },
+        { knowledgeBaseId: 'kb-2', knowledgeBaseName: '技术手册', documentCount: 4 },
+      ],
+      messagesPerDay: [
+        { date: '2026-09-13', count: 12 },
+        { date: '2026-09-14', count: 25 },
+      ],
     }
     vi.mocked(fetch).mockResolvedValue(jsonResponse({
       requestId: 'rid',
@@ -47,6 +60,10 @@ describe('fetchDashboardMetrics', () => {
       credentials: 'include',
     }))
     expect(result).toEqual(payload)
+    expect(result.totalTokens).toBe(1234567)
+    expect(result.recentWeekDocuments).toHaveLength(2)
+    expect(result.documentsByKb).toHaveLength(2)
+    expect(result.messagesPerDay).toHaveLength(2)
   })
 })
 
@@ -55,5 +72,6 @@ function jsonResponse(body: unknown): Response {
     ok: true,
     status: 200,
     json: async () => body,
+    text: async () => JSON.stringify(body),
   } as Response
 }

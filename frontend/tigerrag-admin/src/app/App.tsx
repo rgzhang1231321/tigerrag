@@ -11,14 +11,14 @@ import type { MenuProps } from 'antd'
 import { lazy, Suspense, useEffect, useMemo, useState, createElement } from 'react'
 import { Link, Route, Routes, useLocation } from 'react-router-dom'
 import { logout, refreshSession } from '../features/auth/authApi'
-import { useAuthStore } from '../features/auth/authStore'
+import { useAuthStore, restoreSessionFromCache } from '../features/auth/authStore'
 import type { AuthUser } from '../features/auth/authStore'
 import { hasRole } from '../features/auth/permissions'
-import { Breadcrumb } from '../features/layout/Breadcrumb'
 import { menuIconMap } from '../features/menu/menuIcons'
 import { useMenuTree } from '../features/menu/useMenuConfig'
 import { useDashboardMetrics } from '../features/statistics/useStatistics'
 import { MetricCard } from '../components/MetricCard/MetricCard'
+import { QuickAction } from '../components/QuickAction/QuickAction'
 import { ChangePasswordDialog } from '../features/users/ChangePasswordDialog'
 import { ForbiddenPage } from './ForbiddenPage'
 import { RequireRole } from './RequireRole'
@@ -116,12 +116,20 @@ export function App() {
   const setSession = useAuthStore((state) => state.setSession)
   const clear = useAuthStore((state) => state.clear)
 
+  // 页面加载时先从 sessionStorage 恢复会话，避免 F5 后因 cookie 未发送导致闪跳登录页。
+  // sessionStorage 在 F5 刷新后保留（同标签页），关闭标签页后清除。
+  useEffect(() => {
+    restoreSessionFromCache()
+  }, [])
+
+  // 用 refresh cookie 换取新 accessToken。失败时什么都不做——保留 sessionStorage 恢复的 user，
+  // 让后续 API 请求的 401 刷新机制兜底；若 cookie 与缓存都失效，API 401 会触发 http.ts 里的刷新重试。
   useEffect(() => {
     refreshSession()
       .then(setSession)
-      .catch(clear)
+      .catch(() => {})
       .finally(() => setReady(true))
-  }, [clear, setSession])
+  }, [setSession])
 
   if (!ready) {
     return <Spin className="app-loading" size="large" aria-label="正在恢复登录状态" />
@@ -197,7 +205,7 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
         <nav className="top-nav">{renderTopNav(visibleNavigation)}</nav>
         <div className="account-actions">
           <Dropdown menu={{ items: userMenuItems }} trigger={['click']}>
-            <Tag className="user-tag">{userName}</Tag>
+            <Tag className="user-tag">{userName?.charAt(0) ?? '?'}</Tag>
           </Dropdown>
         </div>
       </Header>
@@ -212,16 +220,6 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
             className="app-sider"
             trigger={null}
           >
-            <div className="sider-collapse-bar">
-              <button
-                type="button"
-                className="sider-collapse-trigger"
-                aria-label={siderCollapsed ? '展开侧边栏' : '折叠侧边栏'}
-                onClick={() => setSiderCollapsed(!siderCollapsed)}
-              >
-                {siderCollapsed ? '»' : '«'}
-              </button>
-            </div>
             <Menu
               mode="inline"
               selectedKeys={[location.pathname]}
@@ -235,7 +233,6 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
           </Sider>
         )}
         <Content className="app-content">
-          <div className="app-breadcrumb"><Breadcrumb /></div>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/knowledge-bases" element={<ModulePage title="知识库" />} />
@@ -355,6 +352,7 @@ function Dashboard() {
           footer={data !== undefined ? `${data.conversationCount} 个会话` : undefined}
         />
       </div>
+      <QuickAction />
     </main>
   )
 }

@@ -140,7 +140,6 @@ body {
 /* 自定义顶部导航：避开 Antd Menu 水平溢出计算 bug。 */
 .top-nav {
   display: flex;
-  flex: 1 1 auto;
   min-width: 0;
   align-items: center;
   height: 100%;
@@ -181,13 +180,20 @@ body {
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .user-tag {
   cursor: pointer;
-  padding: 4px 12px;
+  padding: 0;
+  width: 36px;
+  height: 36px;
+  line-height: 36px;
+  text-align: center;
   font-size: 14px;
-  border-radius: 4px;
+  font-weight: 600;
+  border-radius: 50%;
+  text-transform: uppercase;
 }
 
 .app-sider {
@@ -229,6 +235,19 @@ body {
 
 .app-content {
   padding: 24px;
+  background: var(--card-bg);
+}
+
+.page-title-bar {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .page-heading {

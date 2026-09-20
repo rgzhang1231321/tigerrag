@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../app/http'
-import { createRole, deleteRole, listRolesAll } from './rolesApi'
+import { createRole, deleteRole, listRolesAll, updateRole } from './rolesApi'
 import type { RoleDto } from './rolesApi'
 
-/// <summary>列出全部角色（含系统保留 + DB 自定义），与 useCreateRole / useDeleteRole 共享缓存键。</summary>
+/// <summary>列出全部角色（含系统保留 + DB 自定义），与 useCreateRole / useUpdateRole / useDeleteRole 共享缓存键。</summary>
 export function useRoles() {
   return useQuery({
     queryKey: queryKeys.roles,
@@ -17,6 +17,19 @@ export function useCreateRole() {
   return useMutation({
     mutationFn: async (input: { name: string }): Promise<RoleDto> => {
       return createRole(input)
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.roles })
+    },
+  })
+}
+
+/// <summary>重命名角色；成功后让角色列表缓存失效以触发重拉。</summary>
+export function useUpdateRole() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { originalName: string; name: string }): Promise<RoleDto> => {
+      return updateRole(input.originalName, { name: input.name })
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.roles })

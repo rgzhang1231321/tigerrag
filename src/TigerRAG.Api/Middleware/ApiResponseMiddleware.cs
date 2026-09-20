@@ -22,6 +22,7 @@ public sealed class ApiResponseMiddleware(RequestDelegate next, ILogger<ApiRespo
         await using var buffer = new MemoryStream();
         context.Response.Body = buffer;
         var requestId = context.Items[RequestIdKeys.ItemKey]?.ToString() ?? string.Empty;
+        var errorMessage = string.Empty;
         try
         {
             await next(context);
@@ -38,6 +39,7 @@ public sealed class ApiResponseMiddleware(RequestDelegate next, ILogger<ApiRespo
                 context.Request.Path,
                 error.Message);
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            errorMessage = error.Message ?? "服务内部错误";
         }
 
         buffer.Position = 0;
@@ -57,7 +59,7 @@ public sealed class ApiResponseMiddleware(RequestDelegate next, ILogger<ApiRespo
         context.Response.ContentType = "application/json; charset=utf-8";
         var response = ApiResponse<object?>.Failure(
             ApiResponse.FromHttpStatus(originalStatusCode),
-            "请求处理失败");
+            errorMessage);
         var withRequestId = response.WithRequestId(requestId);
         await JsonSerializer.SerializeAsync(
             originalBody,
