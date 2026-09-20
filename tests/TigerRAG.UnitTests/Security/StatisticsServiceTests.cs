@@ -63,5 +63,11 @@ public sealed class StatisticsServiceTests
     {
         public Task<DashboardMetricsResponse> GetDashboardMetricsAsync(CancellationToken cancellationToken) =>
             Task.FromResult(expected);
+
+        public Task<ReportDataWrapper> GetReportAsync(ReportRequest request, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
+
+        public Task<string> ExportReportAsync(ReportRequest request, CancellationToken cancellationToken) =>
+            throw new NotImplementedException();
     }
 }

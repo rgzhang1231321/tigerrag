@@ -2,8 +2,10 @@ using TigerRAG.Api.Filters;
 using TigerRAG.Api.Hubs;
 using TigerRAG.Api.Middleware;
 using TigerRAG.Api.Security;
+using TigerRAG.Api.Common;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -11,7 +13,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
-using TigerRAG.Application.Security;
 using TigerRAG.Infrastructure.Logging;
 
 namespace TigerRAG.Api;
@@ -38,7 +39,10 @@ public static class ApiComposition
         services
             .AddControllers(options => options.Filters.Add<ApiResponseFilter>())
             .AddJsonOptions(options =>
-                options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.Never);
+            {
+                options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
+                options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+            });
         services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>

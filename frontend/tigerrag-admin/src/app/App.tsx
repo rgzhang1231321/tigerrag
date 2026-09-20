@@ -19,6 +19,7 @@ import { useMenuTree } from '../features/menu/useMenuConfig'
 import { useDashboardMetrics } from '../features/statistics/useStatistics'
 import { MetricCard } from '../components/MetricCard/MetricCard'
 import { QuickAction } from '../components/QuickAction/QuickAction'
+import { DashboardCharts } from '../components/DashboardCharts/DashboardCharts'
 import { ChangePasswordDialog } from '../features/users/ChangePasswordDialog'
 import { ForbiddenPage } from './ForbiddenPage'
 import { RequireRole } from './RequireRole'
@@ -323,35 +324,36 @@ function Dashboard() {
       <div className="metric-grid">
         <MetricCard
           label="知识库"
-          value={data?.knowledgeBaseCount ?? 0}
+          value={data?.KnowledgeBaseCount ?? 0}
           loading={isPending}
           icon={<DatabaseOutlined />}
         />
         <MetricCard
           label="文档总数"
-          value={data?.documentCount ?? 0}
+          value={data?.DocumentCount ?? 0}
           loading={isPending}
           icon={<FileTextOutlined />}
           footer={
-            data !== undefined && data.documentCount > 0
-              ? `已索引 ${data.indexedDocumentCount} · 处理中 ${data.processingDocumentCount}`
+            data !== undefined && data.DocumentCount > 0
+              ? `已索引 ${data.IndexedDocumentCount} · 处理中 ${data.ProcessingDocumentCount}`
               : undefined
           }
         />
         <MetricCard
           label="用户总数"
-          value={data?.userCount ?? 0}
+          value={data?.UserCount ?? 0}
           loading={isPending}
           icon={<TeamOutlined />}
         />
         <MetricCard
           label="问答消息数"
-          value={data?.messageCount ?? 0}
+          value={data?.MessageCount ?? 0}
           loading={isPending}
           icon={<MessageOutlined />}
-          footer={data !== undefined ? `${data.conversationCount} 个会话` : undefined}
+          footer={data !== undefined ? `${data.ConversationCount} 个会话` : undefined}
         />
       </div>
+      {data && <DashboardCharts data={data} />}
       <QuickAction />
     </main>
   )

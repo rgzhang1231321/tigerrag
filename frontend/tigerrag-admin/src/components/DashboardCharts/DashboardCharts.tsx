@@ -10,7 +10,7 @@ interface DashboardChartsProps {
 
 /// <summary>Dashboard 图表区：折线图展示近 7 天文档趋势，饼图展示知识库文档分布。</summary>
 export function DashboardCharts({ data }: DashboardChartsProps) {
-  const hasData = data.recentWeekDocuments.length > 0 || data.documentsByKb.length > 0
+  const hasData = data.RecentWeekDocuments.length > 0 || data.DocumentsByKb.length > 0
 
   if (!hasData) {
     return (
@@ -25,14 +25,14 @@ export function DashboardCharts({ data }: DashboardChartsProps) {
     tooltip: { trigger: 'axis' as const },
     xAxis: {
       type: 'category' as const,
-      data: data.recentWeekDocuments.map((d) => d.date),
+      data: data.RecentWeekDocuments.map((d) => d.Date),
     },
     yAxis: { type: 'value' as const },
     series: [{
       name: '文档上传',
       type: 'line' as const,
       smooth: true,
-      data: data.recentWeekDocuments.map((d) => d.count),
+      data: data.RecentWeekDocuments.map((d) => d.Count),
       areaStyle: { opacity: 0.1 },
     }],
     grid: { left: 40, right: 16, top: 24, bottom: 24 },
@@ -45,9 +45,9 @@ export function DashboardCharts({ data }: DashboardChartsProps) {
       name: '文档分布',
       type: 'pie' as const,
       radius: ['40%', '70%'],
-      data: data.documentsByKb.map((kb) => ({
-        name: kb.knowledgeBaseName,
-        value: kb.documentCount,
+      data: data.DocumentsByKb.map((kb) => ({
+        name: kb.KnowledgeBaseName,
+        value: kb.DocumentCount,
       })),
     }],
   }

@@ -6,4 +6,12 @@ public sealed class StatisticsService(IStatisticsDal statisticsDal) : IStatistic
     /// <summary>获取 Dashboard 聚合指标。</summary>
     public Task<DashboardMetricsResponse> GetDashboardMetricsAsync(CancellationToken cancellationToken) =>
         statisticsDal.GetDashboardMetricsAsync(cancellationToken);
+
+    /// <summary>获取报表数据。</summary>
+    public Task<ReportDataWrapper> GetReportAsync(ReportRequest request, CancellationToken cancellationToken) =>
+        statisticsDal.GetReportAsync(request, cancellationToken);
+
+    /// <summary>导出报表为 CSV。</summary>
+    public Task<string> ExportReportAsync(ReportRequest request, CancellationToken cancellationToken) =>
+        statisticsDal.ExportReportAsync(request, cancellationToken);
 }
