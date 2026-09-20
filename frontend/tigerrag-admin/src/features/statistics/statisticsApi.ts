@@ -1,30 +1,30 @@
 import { http } from '../../app/http'
 
 export interface DailyCount {
-  Date: string
-  Count: number
+  date: string
+  count: number
 }
 
 export interface KbDocumentCount {
-  KnowledgeBaseId: string
-  KnowledgeBaseName: string
-  DocumentCount: number
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+  documentCount: number
 }
 
 /// <summary>Dashboard 聚合指标响应；字段命名与后端 DashboardMetricsResponse 对齐。</summary>
 export interface DashboardMetrics {
-  KnowledgeBaseCount: number
-  DocumentCount: number
-  IndexedDocumentCount: number
-  ProcessingDocumentCount: number
-  FailedDocumentCount: number
-  UserCount: number
-  ConversationCount: number
-  MessageCount: number
-  TotalTokens: number
-  RecentWeekDocuments: DailyCount[]
-  DocumentsByKb: KbDocumentCount[]
-  MessagesPerDay: DailyCount[]
+  knowledgeBaseCount: number
+  documentCount: number
+  indexedDocumentCount: number
+  processingDocumentCount: number
+  failedDocumentCount: number
+  userCount: number
+  conversationCount: number
+  messageCount: number
+  totalTokens: number
+  recentWeekDocuments: DailyCount[]
+  documentsByKb: KbDocumentCount[]
+  messagesPerDay: DailyCount[]
 }
 
 /// <summary>取 Dashboard 指标；走统一 http，自动注入 access token。</summary>
@@ -47,47 +47,47 @@ export interface ReportRequest {
 }
 
 export interface StatusCount {
-  Status: string
-  Count: number
+  status: string
+  count: number
 }
 
 export interface FailureItem {
-  DocumentId: string
-  DocumentTitle: string
-  Reason: string
-  FailedAt: string
+  documentId: string
+  documentTitle: string
+  reason: string
+  failedAt: string
 }
 
 export interface RoleCount {
-  Role: string
-  Count: number
+  role: string
+  count: number
 }
 
 export interface DocumentsReportData {
-  UploadTrend: DailyCount[]
-  StatusBreakdown: StatusCount[]
-  ByKb: KbDocumentCount[]
-  Failures: FailureItem[]
+  uploadTrend: DailyCount[]
+  statusBreakdown: StatusCount[]
+  byKb: KbDocumentCount[]
+  failures: FailureItem[]
 }
 
 export interface UsersReportData {
-  NewUserTrend: DailyCount[]
-  ActiveUserTrend: DailyCount[]
-  RoleDistribution: RoleCount[]
+  newUserTrend: DailyCount[]
+  activeUserTrend: DailyCount[]
+  roleDistribution: RoleCount[]
 }
 
 export interface ConversationsReportData {
-  ConversationTrend: DailyCount[]
-  MessageTrend: DailyCount[]
-  AvgMessagesPerConversation: number
-  TokenTrend: DailyCount[]
+  conversationTrend: DailyCount[]
+  messageTrend: DailyCount[]
+  avgMessagesPerConversation: number
+  tokenTrend: DailyCount[]
 }
 
 export interface SystemReportData {
-  IndexingSuccessRate: number
-  FailureRate: number
-  ApiCallTrend: DailyCount[]
-  AvgProcessTimeSeconds: number
+  indexingSuccessRate: number
+  failureRate: number
+  apiCallTrend: DailyCount[]
+  avgProcessTimeSeconds: number
 }
 
 export interface ReportDataWrapper {

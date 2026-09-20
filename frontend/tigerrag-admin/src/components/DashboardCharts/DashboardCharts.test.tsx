@@ -4,27 +4,27 @@ import type { DashboardMetrics } from '../../features/statistics/statisticsApi'
 import { DashboardCharts } from './DashboardCharts'
 
 const fullData: DashboardMetrics = {
-  KnowledgeBaseCount: 3,
-  DocumentCount: 10,
-  IndexedDocumentCount: 8,
-  ProcessingDocumentCount: 1,
-  FailedDocumentCount: 1,
-  UserCount: 5,
-  ConversationCount: 20,
-  MessageCount: 80,
-  TotalTokens: 1234567,
-  RecentWeekDocuments: [
-    { Date: '2026-09-13', Count: 2 },
-    { Date: '2026-09-14', Count: 5 },
-    { Date: '2026-09-15', Count: 8 },
+  knowledgeBaseCount: 3,
+  documentCount: 10,
+  indexedDocumentCount: 8,
+  processingDocumentCount: 1,
+  failedDocumentCount: 1,
+  userCount: 5,
+  conversationCount: 20,
+  messageCount: 80,
+  totalTokens: 1234567,
+  recentWeekDocuments: [
+    { date: '2026-09-13', count: 2 },
+    { date: '2026-09-14', count: 5 },
+    { date: '2026-09-15', count: 8 },
   ],
-  DocumentsByKb: [
-    { KnowledgeBaseId: 'kb-1', KnowledgeBaseName: '产品文档', DocumentCount: 6 },
-    { KnowledgeBaseId: 'kb-2', KnowledgeBaseName: '技术手册', DocumentCount: 4 },
+  documentsByKb: [
+    { knowledgeBaseId: 'kb-1', knowledgeBaseName: '产品文档', documentCount: 6 },
+    { knowledgeBaseId: 'kb-2', knowledgeBaseName: '技术手册', documentCount: 4 },
   ],
-  MessagesPerDay: [
-    { Date: '2026-09-13', Count: 12 },
-    { Date: '2026-09-14', Count: 25 },
+  messagesPerDay: [
+    { date: '2026-09-13', count: 12 },
+    { date: '2026-09-14', count: 25 },
   ],
 }
 
@@ -35,7 +35,7 @@ describe('DashboardCharts', () => {
   })
 
   it('renders empty state when no trend data', () => {
-    render(<DashboardCharts data={{ ...fullData, RecentWeekDocuments: [], DocumentsByKb: [] }} />)
+    render(<DashboardCharts data={{ ...fullData, recentWeekDocuments: [], documentsByKb: [] }} />)
     expect(screen.getByText('暂无趋势数据')).toBeInTheDocument()
   })
 })

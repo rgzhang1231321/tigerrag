@@ -126,11 +126,11 @@ function ReportContent({ reportType, data }: { reportType: ReportType; data: unk
 }
 
 function DocumentsReport({ data }: { data: DocumentsReportData }) {
-  const uploadTrend = data.UploadTrend ?? []
-  const statusBreakdown = data.StatusBreakdown ?? []
-  const byKb = data.ByKb ?? []
-  const failures = data.Failures ?? []
-  const totalUploads = uploadTrend.reduce((sum, d) => sum + d.Count, 0)
+  const uploadTrend = data.uploadTrend ?? []
+  const statusBreakdown = data.statusBreakdown ?? []
+  const byKb = data.byKb ?? []
+  const failures = data.failures ?? []
+  const totalUploads = uploadTrend.reduce((sum, d) => sum + d.count, 0)
 
   const columns: ColumnsType<typeof failures[number]> = [
     { title: '文档标题', dataIndex: 'documentTitle', key: 'documentTitle' },
@@ -149,13 +149,13 @@ function DocumentsReport({ data }: { data: DocumentsReportData }) {
 
       <ReportCharts
         lineData={uploadTrend}
-        pieData={byKb.map((kb) => ({ name: kb.KnowledgeBaseName, value: kb.DocumentCount }))}
+        pieData={byKb.map((kb) => ({ name: kb.knowledgeBaseName, value: kb.documentCount }))}
       />
 
       {failures.length > 0 && (
         <Card className="report-table-card">
           <h3 className="charts-heading">失败明细</h3>
-          <Table columns={columns} dataSource={failures} rowKey="DocumentId" pagination={{ pageSize: 10 }} size="small" />
+          <Table columns={columns} dataSource={failures} rowKey="documentId" pagination={{ pageSize: 10 }} size="small" />
         </Card>
       )}
     </div>
@@ -163,11 +163,11 @@ function DocumentsReport({ data }: { data: DocumentsReportData }) {
 }
 
 function UsersReport({ data }: { data: UsersReportData }) {
-  const newUserTrend = data.NewUserTrend ?? []
-  const activeUserTrend = data.ActiveUserTrend ?? []
-  const roleDistribution = data.RoleDistribution ?? []
-  const totalNew = newUserTrend.reduce((sum, d) => sum + d.Count, 0)
-  const totalActive = activeUserTrend.reduce((sum, d) => sum + d.Count, 0)
+  const newUserTrend = data.newUserTrend ?? []
+  const activeUserTrend = data.activeUserTrend ?? []
+  const roleDistribution = data.roleDistribution ?? []
+  const totalNew = newUserTrend.reduce((sum, d) => sum + d.count, 0)
+  const totalActive = activeUserTrend.reduce((sum, d) => sum + d.count, 0)
 
   return (
     <div className="report-content">
@@ -179,26 +179,26 @@ function UsersReport({ data }: { data: UsersReportData }) {
 
       <ReportCharts
         lineData={newUserTrend}
-        pieData={roleDistribution.map((r) => ({ name: r.Role, value: r.Count }))}
+        pieData={roleDistribution.map((r) => ({ name: r.role, value: r.count }))}
       />
     </div>
   )
 }
 
 function ConversationsReport({ data }: { data: ConversationsReportData }) {
-  const conversationTrend = data.ConversationTrend ?? []
-  const messageTrend = data.MessageTrend ?? []
-  const tokenTrend = data.TokenTrend ?? []
-  const totalConvs = conversationTrend.reduce((sum, d) => sum + d.Count, 0)
-  const totalMsgs = messageTrend.reduce((sum, d) => sum + d.Count, 0)
+  const conversationTrend = data.conversationTrend ?? []
+  const messageTrend = data.messageTrend ?? []
+  const tokenTrend = data.tokenTrend ?? []
+  const totalConvs = conversationTrend.reduce((sum, d) => sum + d.count, 0)
+  const totalMsgs = messageTrend.reduce((sum, d) => sum + d.count, 0)
 
   return (
     <div className="report-content">
       <div className="metric-grid">
         <MetricCard label="总会话数" value={totalConvs} />
         <MetricCard label="总消息数" value={totalMsgs} />
-        <MetricCard label="平均消息/会话" value={(data.AvgMessagesPerConversation ?? 0).toFixed(1)} />
-        <MetricCard label="Token 消耗" value={tokenTrend.reduce((sum, d) => sum + d.Count, 0)} />
+        <MetricCard label="平均消息/会话" value={(data.avgMessagesPerConversation ?? 0).toFixed(1)} />
+        <MetricCard label="Token 消耗" value={tokenTrend.reduce((sum, d) => sum + d.count, 0)} />
       </div>
 
       <ReportCharts lineData={messageTrend} pieData={[]} />
@@ -207,14 +207,14 @@ function ConversationsReport({ data }: { data: ConversationsReportData }) {
 }
 
 function SystemReport({ data }: { data: SystemReportData }) {
-  const apiCallTrend = data.ApiCallTrend ?? []
+  const apiCallTrend = data.apiCallTrend ?? []
   return (
     <div className="report-content">
       <div className="metric-grid">
-        <MetricCard label="索引成功率" value={`${((data.IndexingSuccessRate ?? 0) * 100).toFixed(1)}%`} />
-        <MetricCard label="失败率" value={`${((data.FailureRate ?? 0) * 100).toFixed(1)}%`} />
-        <MetricCard label="平均处理耗时" value={`${(data.AvgProcessTimeSeconds ?? 0).toFixed(1)}s`} />
-        <MetricCard label="API 调用" value={apiCallTrend.reduce((sum, d) => sum + d.Count, 0)} />
+        <MetricCard label="索引成功率" value={`${((data.indexingSuccessRate ?? 0) * 100).toFixed(1)}%`} />
+        <MetricCard label="失败率" value={`${((data.failureRate ?? 0) * 100).toFixed(1)}%`} />
+        <MetricCard label="平均处理耗时" value={`${(data.avgProcessTimeSeconds ?? 0).toFixed(1)}s`} />
+        <MetricCard label="API 调用" value={apiCallTrend.reduce((sum, d) => sum + d.count, 0)} />
       </div>
 
       <ReportCharts lineData={apiCallTrend} pieData={[]} />
@@ -235,7 +235,7 @@ function ReportCharts({
   lineData,
   pieData,
 }: {
-  lineData: { Date: string; Count: number }[]
+  lineData: { date: string; count: number }[]
   pieData: { name: string; value: number }[]
 }) {
   if (lineData.length === 0 && pieData.length === 0) {
@@ -249,13 +249,13 @@ function ReportCharts({
 
   const lineOption: EChartsOption = {
     tooltip: { trigger: 'axis' as const },
-    xAxis: { type: 'category' as const, data: lineData.map((d) => d.Date) },
+    xAxis: { type: 'category' as const, data: lineData.map((d) => d.date) },
     yAxis: { type: 'value' as const },
     series: [{
       name: '数量',
       type: 'line' as const,
       smooth: true,
-      data: lineData.map((d) => d.Count),
+      data: lineData.map((d) => d.count),
       areaStyle: { opacity: 0.1 },
     }],
     grid: { left: 40, right: 16, top: 24, bottom: 24 },
