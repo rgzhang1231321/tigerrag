@@ -158,6 +158,7 @@ public sealed class RefreshSessionRevocationTests : IAsyncLifetime
             .AddSignInManager()
             .AddEntityFrameworkStores<TigerRagDbContext>();
         services.AddScoped<IRefreshSessionDal, RefreshSessionDal>();
+        services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         return services.BuildServiceProvider();
     }
 

@@ -15,7 +15,8 @@ namespace TigerRAG.Infrastructure.Dal;
 public sealed class UserDal(
     UserManager<AppUser> userManager,
     SignInManager<AppUser> signInManager,
-    TigerRagDbContext dbContext) : IUserDal
+    TigerRagDbContext dbContext,
+    IUnitOfWork unitOfWork) : IUserDal
     , IUserCredentialDal
 {
     public async Task<UserAccount?> ValidateCredentialsAsync(
@@ -81,35 +82,34 @@ public sealed class UserDal(
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        // 父行行锁：把同一用户的并发覆盖式更新串行化，避免读旧集 → 计算差集 → 保存的窗口出现并集残留。
-        // 默认 READ COMMITTED 下 SELECT FOR UPDATE 会阻塞其他写者，直到本事务提交/回滚。
-        await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-        await dbContext.Database.ExecuteSqlInterpolatedAsync(
-            $""" SELECT 1 FROM "AspNetUsers" WHERE "Id" = {userId} FOR UPDATE """,
-            cancellationToken);
-
-        if (!await dbContext.Users.AnyAsync(user => user.Id == userId, cancellationToken))
+        await unitOfWork.ExecuteAsync(async ct =>
         {
-            await tx.RollbackAsync(cancellationToken);
-            throw new KeyNotFoundException($"User {userId} was not found.");
-        }
+            // 父行行锁：把同一用户的并发覆盖式更新串行化，避免读旧集 → 计算差集 → 保存的窗口出现并集残留。
+            // 默认 READ COMMITTED 下 SELECT FOR UPDATE 会阻塞其他写者，直到本事务提交/回滚。
+            await dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $""" SELECT 1 FROM "AspNetUsers" WHERE "Id" = {userId} FOR UPDATE """,
+                ct);
 
-        var roleIds = await dbContext.Roles
-            .Where(role => role.Name != null && roles.Contains(role.Name))
-            .Select(role => role.Id)
-            .ToArrayAsync(cancellationToken);
-        if (roleIds.Length != roles.Count)
-        {
-            await tx.RollbackAsync(cancellationToken);
-            throw new InvalidOperationException("One or more system roles are missing from the database.");
-        }
+            if (!await dbContext.Users.AnyAsync(user => user.Id == userId, ct))
+            {
+                throw new KeyNotFoundException($"User {userId} was not found.");
+            }
 
-        var currentRoles = await dbContext.UserRoles
-            .Where(userRole => userRole.UserId == userId)
-            .ToArrayAsync(cancellationToken);
-        ApplyRoleChanges(dbContext, userId, currentRoles, roleIds);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await tx.CommitAsync(cancellationToken);
+            var roleIds = await dbContext.Roles
+                .Where(role => role.Name != null && roles.Contains(role.Name))
+                .Select(role => role.Id)
+                .ToArrayAsync(ct);
+            if (roleIds.Length != roles.Count)
+            {
+                throw new InvalidOperationException("One or more system roles are missing from the database.");
+            }
+
+            var currentRoles = await dbContext.UserRoles
+                .Where(userRole => userRole.UserId == userId)
+                .ToArrayAsync(ct);
+            ApplyRoleChanges(dbContext, userId, currentRoles, roleIds);
+            await dbContext.SaveChangesAsync(ct);
+        }, cancellationToken);
     }
 
     public async Task<UserAccount> CreateAsync(

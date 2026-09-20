@@ -171,6 +171,7 @@ public sealed class RoleAndAclConcurrencyTests : IAsyncLifetime
             .AddEntityFrameworkStores<TigerRagDbContext>();
         services.AddScoped<IUserDal, UserDal>();
         services.AddScoped<IDocumentAccessDal, DocumentAccessDal>();
+        services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         return services.BuildServiceProvider();
     }
 

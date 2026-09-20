@@ -15,7 +15,8 @@ namespace TigerRAG.Infrastructure.Dal;
 public sealed class RefreshSessionDal(
     TigerRagDbContext dbContext,
     UserManager<AppUser> userManager,
-    IOptions<RefreshTokenOptions> options) : IRefreshSessionDal
+    IOptions<RefreshTokenOptions> options,
+    IUnitOfWork unitOfWork) : IRefreshSessionDal
 {
     public async Task<RefreshToken> CreateAsync(Guid userId, CancellationToken cancellationToken)
     {
@@ -34,60 +35,61 @@ public sealed class RefreshSessionDal(
     {
         var hash = Hash(value);
         var now = DateTimeOffset.UtcNow;
-        // 行级锁：在同一事务里查 + 锁定 + 撤销 + 签发，避免两个并发请求拿到同一行。
-        // 默认 READ COMMITTED 隔离下 SELECT FOR UPDATE 会阻塞其他写者，直到本事务提交/回滚。
-        await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-        var current = await dbContext.RefreshTokens
-            .FromSqlInterpolated($"""
-                SELECT * FROM refresh_token_record
-                WHERE "TokenHash" = {hash} AND "RevokedAt" IS NULL AND "ExpiresAt" > {now}
-                FOR UPDATE
-                """)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (current is null)
+
+        RefreshSession? result = null;
+        await unitOfWork.ExecuteAsync(async ct =>
         {
-            await tx.RollbackAsync(cancellationToken);
-            return null;
-        }
-
-        var user = await userManager.FindByIdAsync(current.UserId.ToString());
-        if (user is null)
-        {
-            await tx.RollbackAsync(cancellationToken);
-            return null;
-        }
-
-        // 锁定即拒绝：Identity 自动锁定（失败次数超阈值）或管理员手动锁定后，
-        // 既未撤销该行的 RefreshToken 也不能再借此换取新 AccessToken，否则等于绕过锁口。
-        if (user.LockoutEnd is { } lockoutEnd && lockoutEnd > now)
-        {
-            await tx.RollbackAsync(cancellationToken);
-            return null;
-        }
-
-        // stamp 不一致即视为已被敏感动作废止：改密、角色变更、删除前的标记轮换等都会换 stamp。
-        // SecurityStamp 是"按用户撤权"的主防线，比依赖 RevokeAllAsync 的批量 UPDATE 更早命中，
-        // 也避免 PostgreSQL read-committed 下 ExecuteUpdate 快照与并发轮换 INSERT 之间的窗口。
-        if (!string.Equals(current.SecurityStamp, user.SecurityStamp, StringComparison.Ordinal))
-        {
-            await tx.RollbackAsync(cancellationToken);
-            return null;
-        }
-
-        // 原子轮换：原会话立即撤销，再签发新会话，避免并发请求复用旧令牌。
-        current.RevokedAt = now;
-        var replacement = NewToken();
-        dbContext.RefreshTokens.Add(Record(user.Id, replacement, user.SecurityStamp));
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await tx.CommitAsync(cancellationToken);
-
-        var roles = await userManager.GetRolesAsync(user);
-        return new RefreshSession(
-            new UserAccount(user.Id, user.UserName ?? string.Empty, roles.ToArray())
+            // 行级锁：在同一事务里查 + 锁定 + 撤销 + 签发，避免两个并发请求拿到同一行。
+            // 默认 READ COMMITTED 隔离下 SELECT FOR UPDATE 会阻塞其他写者，直到本事务提交/回滚。
+            var current = await dbContext.RefreshTokens
+                .FromSqlInterpolated($"""
+                    SELECT * FROM refresh_token_record
+                    WHERE "TokenHash" = {hash} AND "RevokedAt" IS NULL AND "ExpiresAt" > {now}
+                    FOR UPDATE
+                    """)
+                .FirstOrDefaultAsync(ct);
+            if (current is null)
             {
-                SecurityStamp = user.SecurityStamp ?? string.Empty
-            },
-            replacement);
+                return;
+            }
+
+            var user = await userManager.FindByIdAsync(current.UserId.ToString());
+            if (user is null)
+            {
+                return;
+            }
+
+            // 锁定即拒绝：Identity 自动锁定（失败次数超阈值）或管理员手动锁定后，
+            // 既未撤销该行的 RefreshToken 也不能再借此换取新 AccessToken，否则等于绕过锁口。
+            if (user.LockoutEnd is { } lockoutEnd && lockoutEnd > now)
+            {
+                return;
+            }
+
+            // stamp 不一致即视为已被敏感动作废止：改密、角色变更、删除前的标记轮换等都会换 stamp。
+            // SecurityStamp 是"按用户撤权"的主防线，比依赖 RevokeAllAsync 的批量 UPDATE 更早命中，
+            // 也避免 PostgreSQL read-committed 下 ExecuteUpdate 快照与并发轮换 INSERT 之间的窗口。
+            if (!string.Equals(current.SecurityStamp, user.SecurityStamp, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            // 原子轮换：原会话立即撤销，再签发新会话，避免并发请求复用旧令牌。
+            current.RevokedAt = now;
+            var replacement = NewToken();
+            dbContext.RefreshTokens.Add(Record(user.Id, replacement, user.SecurityStamp));
+            await dbContext.SaveChangesAsync(ct);
+
+            var roles = await userManager.GetRolesAsync(user);
+            result = new RefreshSession(
+                new UserAccount(user.Id, user.UserName ?? string.Empty, roles.ToArray())
+                {
+                    SecurityStamp = user.SecurityStamp ?? string.Empty
+                },
+                replacement);
+        }, cancellationToken);
+
+        return result;
     }
 
     public async Task RevokeAsync(string value, CancellationToken cancellationToken)
