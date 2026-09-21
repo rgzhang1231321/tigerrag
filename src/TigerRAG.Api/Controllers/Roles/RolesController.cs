@@ -25,9 +25,14 @@ public sealed class RolesController(RoleAdminService roleAdmin) : ControllerBase
         CreateRoleRequest request,
         CancellationToken cancellationToken)
     {
+        if (!HttpContext.TryGetActor(out var actor))
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "用户身份无效"));
+        }
+
         try
         {
-            var role = await roleAdmin.CreateRoleAsync(request, cancellationToken);
+            var role = await roleAdmin.CreateRoleAsync(actor, request, cancellationToken);
             return Ok(ApiResponse.Success(role, "角色创建成功"));
         }
         catch (ArgumentException error)
@@ -44,9 +49,14 @@ public sealed class RolesController(RoleAdminService roleAdmin) : ControllerBase
     [HttpPost("{name}/delete")]
     public async Task<IActionResult> Delete(string name, CancellationToken cancellationToken)
     {
+        if (!HttpContext.TryGetActor(out var actor))
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "用户身份无效"));
+        }
+
         try
         {
-            var deleted = await roleAdmin.DeleteAsync(name, cancellationToken);
+            var deleted = await roleAdmin.DeleteAsync(actor, name, cancellationToken);
             return deleted
                 ? Ok(ApiResponse.Success((object?)null))
                 : Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, $"角色 {name} 不存在"));

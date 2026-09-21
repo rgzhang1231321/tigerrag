@@ -80,12 +80,17 @@ public sealed class RoleAdminServiceTests
     public async Task CreateAsync_WithValidCustomName_CreatesSuccessfully()
     {
         var roleAdmin = new RecordingRoleAdmin();
-        var service = BuildService(roleAdmin);
+        var audit = new RecordingAuditWriter();
+        var service = BuildService(roleAdmin, audit: audit);
 
-        var result = await service.CreateRoleAsync(new CreateRoleRequest("CustomRole"), CancellationToken.None);
+        var result = await service.CreateRoleAsync(AdminActor, new CreateRoleRequest("CustomRole"), CancellationToken.None);
 
         Assert.Equal(new RoleDto("CustomRole", false, 0, 0, []), result);
         Assert.Equal(["CustomRole"], roleAdmin.CreatedNames);
+        Assert.Single(audit.Entries);
+        Assert.Equal(OperationAuditActions.RoleCreate, audit.Entries[0].Action);
+        Assert.Equal("CustomRole", audit.Entries[0].TargetId);
+        Assert.Contains("admin", audit.Entries[0].Summary);
     }
 
     [Theory]
@@ -97,10 +102,13 @@ public sealed class RoleAdminServiceTests
     public async Task CreateAsync_WithInvalidFormat_ThrowsArgumentException(string name)
     {
         var roleAdmin = new RecordingRoleAdmin();
-        var service = BuildService(roleAdmin);
+        var audit = new RecordingAuditWriter();
+        var service = BuildService(roleAdmin, audit: audit);
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            service.CreateRoleAsync(new CreateRoleRequest(name), CancellationToken.None));
+            service.CreateRoleAsync(AdminActor, new CreateRoleRequest(name), CancellationToken.None));
+
+        Assert.Empty(audit.Entries);
     }
 
     [Fact]
@@ -108,37 +116,55 @@ public sealed class RoleAdminServiceTests
     {
         // Admin 是受保护不可删，但可重建（运行期同步）。
         var roleAdmin = new RecordingRoleAdmin();
-        var service = BuildService(roleAdmin);
+        var audit = new RecordingAuditWriter();
+        var service = BuildService(roleAdmin, audit: audit);
 
-        var result = await service.CreateRoleAsync(new CreateRoleRequest("Admin"), CancellationToken.None);
+        var result = await service.CreateRoleAsync(AdminActor, new CreateRoleRequest("Admin"), CancellationToken.None);
 
         Assert.Equal("Admin", result.Name);
+        Assert.Single(audit.Entries);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenAuditThrows_PropagatesException()
+    {
+        // 审计写入抛异常 → 向上传播；真实 DB 事务会回滚角色创建（RecordingUnitOfWork 无事务语义，仅验证异常传播）。
+        var roleAdmin = new RecordingRoleAdmin();
+        var audit = new FailingAuditWriter();
+        var service = BuildService(roleAdmin, audit: audit);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.CreateRoleAsync(AdminActor, new CreateRoleRequest("CustomRole"), CancellationToken.None));
     }
 
     [Fact]
     public async Task CreateAsync_WithDuplicateName_ThrowsArgumentException()
     {
         var roleAdmin = new RecordingRoleAdmin().Seed("CustomRole");
-        var service = BuildService(roleAdmin);
+        var audit = new RecordingAuditWriter();
+        var service = BuildService(roleAdmin, audit: audit);
 
         var error = await Assert.ThrowsAsync<ArgumentException>(() =>
-            service.CreateRoleAsync(new CreateRoleRequest("CustomRole"), CancellationToken.None));
+            service.CreateRoleAsync(AdminActor, new CreateRoleRequest("CustomRole"), CancellationToken.None));
 
         Assert.Contains("已存在", error.Message);
         Assert.Empty(roleAdmin.CreatedNames);
+        Assert.Empty(audit.Entries);
     }
 
     [Fact]
     public async Task DeleteAsync_WithAdminName_ThrowsArgumentException()
     {
         var roleAdmin = new RecordingRoleAdmin().Seed("Admin");
-        var service = BuildService(roleAdmin);
+        var audit = new RecordingAuditWriter();
+        var service = BuildService(roleAdmin, audit: audit);
 
         var error = await Assert.ThrowsAsync<ArgumentException>(() =>
-            service.DeleteAsync("Admin", CancellationToken.None));
+            service.DeleteAsync(AdminActor, "Admin", CancellationToken.None));
 
         Assert.Contains("不可删除", error.Message);
         Assert.False(roleAdmin.DeleteCalled);
+        Assert.Empty(audit.Entries);
     }
 
     [Fact]
@@ -147,24 +173,30 @@ public sealed class RoleAdminServiceTests
         // KbManager/Editor/Viewer/Auditor 原本是 "系统保留"，现在可被删除（业务按用户回答确定）。
         var roleAdmin = new RecordingRoleAdmin().Seed("Viewer");
         var menuReference = new RecordingMenuReference();
-        var service = BuildService(roleAdmin, menuReference);
+        var audit = new RecordingAuditWriter();
+        var service = BuildService(roleAdmin, menuReference, audit: audit);
 
-        var deleted = await service.DeleteAsync("Viewer", CancellationToken.None);
+        var deleted = await service.DeleteAsync(AdminActor, "Viewer", CancellationToken.None);
 
         Assert.True(deleted);
         Assert.True(roleAdmin.DeleteCalled);
+        Assert.Single(audit.Entries);
+        Assert.Equal(OperationAuditActions.RoleDelete, audit.Entries[0].Action);
+        Assert.Equal("Viewer", audit.Entries[0].TargetId);
     }
 
     [Fact]
     public async Task DeleteAsync_WhenRoleMissing_ReturnsFalse()
     {
         var roleAdmin = new RecordingRoleAdmin();
-        var service = BuildService(roleAdmin);
+        var audit = new RecordingAuditWriter();
+        var service = BuildService(roleAdmin, audit: audit);
 
-        var deleted = await service.DeleteAsync("CustomRole", CancellationToken.None);
+        var deleted = await service.DeleteAsync(AdminActor, "CustomRole", CancellationToken.None);
 
         Assert.False(deleted);
         Assert.False(roleAdmin.DeleteCalled);
+        Assert.Empty(audit.Entries);
     }
 
     [Fact]
@@ -174,13 +206,15 @@ public sealed class RoleAdminServiceTests
         var roleAdmin = new RecordingRoleAdmin().Seed("CustomRole");
         roleAdmin.SetAssignmentCount("CustomRole", 2);
         var menuReference = new RecordingMenuReference();
-        var service = BuildService(roleAdmin, menuReference);
+        var audit = new RecordingAuditWriter();
+        var service = BuildService(roleAdmin, menuReference, audit: audit);
 
         var error = await Assert.ThrowsAsync<ArgumentException>(() =>
-            service.DeleteAsync("CustomRole", CancellationToken.None));
+            service.DeleteAsync(AdminActor, "CustomRole", CancellationToken.None));
 
         Assert.Contains("用户", error.Message);
         Assert.False(roleAdmin.DeleteCalled);
+        Assert.Empty(audit.Entries);
     }
 
     [Fact]
@@ -189,14 +223,16 @@ public sealed class RoleAdminServiceTests
         var roleAdmin = new RecordingRoleAdmin().Seed("CustomRole");
         var menuReference = new RecordingMenuReference()
             .WithMenuNames("CustomRole", "问答工作台", "知识库");
-        var service = BuildService(roleAdmin, menuReference);
+        var audit = new RecordingAuditWriter();
+        var service = BuildService(roleAdmin, menuReference, audit: audit);
 
         var error = await Assert.ThrowsAsync<ArgumentException>(() =>
-            service.DeleteAsync("CustomRole", CancellationToken.None));
+            service.DeleteAsync(AdminActor, "CustomRole", CancellationToken.None));
 
         Assert.Contains("菜单", error.Message);
         Assert.Contains("问答工作台", error.Message);
         Assert.False(roleAdmin.DeleteCalled);
+        Assert.Empty(audit.Entries);
     }
 
     [Fact]
@@ -209,9 +245,10 @@ public sealed class RoleAdminServiceTests
         var menuReference = new RecordingMenuReference();
         var sessions = new RecordingRefreshSessionDal();
         var rotator = new RecordingStampRotator();
-        var service = BuildService(roleAdmin, menuReference, rotator, sessions);
+        var audit = new RecordingAuditWriter();
+        var service = BuildService(roleAdmin, menuReference, rotator, sessions, audit: audit);
 
-        var deleted = await service.DeleteAsync("CustomRole", CancellationToken.None);
+        var deleted = await service.DeleteAsync(AdminActor, "CustomRole", CancellationToken.None);
 
         Assert.True(deleted);
         Assert.True(menuReference.CleanupCalled);
@@ -219,6 +256,9 @@ public sealed class RoleAdminServiceTests
         Assert.True(roleAdmin.DeleteCalled);
         Assert.Empty(rotator.RotatedUserIds);
         Assert.Empty(sessions.RevokedUserIds);
+        Assert.Single(audit.Entries);
+        Assert.Equal(OperationAuditActions.RoleDelete, audit.Entries[0].Action);
+        Assert.Equal("CustomRole", audit.Entries[0].TargetId);
     }
 
     [Fact]
@@ -233,12 +273,15 @@ public sealed class RoleAdminServiceTests
         roleAdmin.SetAssignedUsers("CustomRole", userIds);
         var rotator = new FailingAfterFirstStampRotator();
         var sessions = new RecordingRefreshSessionDal();
-        var service = BuildService(roleAdmin, new RecordingMenuReference(), rotator, sessions);
+        var audit = new RecordingAuditWriter();
+        var service = BuildService(roleAdmin, new RecordingMenuReference(), rotator, sessions, audit: audit);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.DeleteAsync("CustomRole", CancellationToken.None));
+            service.DeleteAsync(AdminActor, "CustomRole", CancellationToken.None));
 
         Assert.Equal([userIds[0]], rotator.InvalidatedUserIds);
+        // 事务回滚，审计不写入。
+        Assert.Empty(audit.Entries);
     }
 
     [Fact]
@@ -366,14 +409,15 @@ public sealed class RoleAdminServiceTests
         IUserSecurityStampRotator? rotator = null,
         IRefreshSessionDal? sessions = null,
         IUnitOfWork? unitOfWork = null,
-        IReadOnlyList<MenuConfigItem>? menus = null) =>
+        IReadOnlyList<MenuConfigItem>? menus = null,
+        IOperationAuditWriter? audit = null) =>
         new(roleAdmin,
             menuReference ?? new RecordingMenuReference(),
             new RecordingMenuConfigDal(menus ?? []),
             unitOfWork ?? new RecordingUnitOfWork(),
             rotator ?? new RecordingStampRotator(),
             sessions ?? new RecordingRefreshSessionDal(),
-            new NoopAuditWriter());
+            audit ?? new NoopAuditWriter());
 
     // ----- recording stubs -----
 
@@ -479,7 +523,9 @@ public sealed class RoleAdminServiceTests
 
     private sealed class RecordingMenuReference : IRoleMenuReference
     {
-        private readonly Dictionary<string, List<string>> _names = new(StringComparer.Ordinal);
+        // 存储结构：菜单标签 → 该菜单关联的角色列表。
+        // 与 MenuReferenceDal 一致：按菜单维度管理 Roles 数组，而非按角色维度。
+        private readonly Dictionary<string, List<string>> _menus = new(StringComparer.Ordinal);
 
         public bool CleanupCalled { get; private set; }
         public string? LastCleanupRole { get; private set; }
@@ -487,23 +533,40 @@ public sealed class RoleAdminServiceTests
         public string? RenameOldName { get; private set; }
         public string? RenameNewName { get; private set; }
 
+        /// <summary>为 <paramref name="label"/> 菜单添加 <paramref name="role"/> 角色。同名菜单多次调用会合并角色列表。</summary>
         public RecordingMenuReference WithMenuNames(string role, params string[] labels)
         {
-            _names[role] = labels.ToList();
+            foreach (var label in labels)
+            {
+                if (!_menus.TryGetValue(label, out var roles))
+                {
+                    roles = new List<string>();
+                    _menus[label] = roles;
+                }
+                if (!roles.Contains(role, StringComparer.Ordinal))
+                {
+                    roles.Add(role);
+                }
+            }
             return this;
         }
 
         public Task<IReadOnlyList<string>> ListMenuNamesAsync(string roleName, CancellationToken cancellationToken) =>
             Task.FromResult(
-                (IReadOnlyList<string>)(_names.TryGetValue(roleName, out var labels)
-                    ? labels.OrderBy(l => l, StringComparer.Ordinal).ToArray()
-                    : Array.Empty<string>()));
+                (IReadOnlyList<string>)_menus
+                    .Where(kvp => kvp.Value.Contains(roleName, StringComparer.Ordinal))
+                    .Select(kvp => kvp.Key)
+                    .OrderBy(label => label, StringComparer.Ordinal)
+                    .ToArray());
 
         public Task<int> RemoveRoleFromAllMenusAsync(string roleName, CancellationToken cancellationToken)
         {
             CleanupCalled = true;
             LastCleanupRole = roleName;
-            _names.Remove(roleName);
+            foreach (var roles in _menus.Values)
+            {
+                roles.RemoveAll(r => string.Equals(r, roleName, StringComparison.Ordinal));
+            }
             return Task.FromResult(0);
         }
 
@@ -514,13 +577,17 @@ public sealed class RoleAdminServiceTests
             RenameNewName = newName;
 
             var affected = 0;
-            foreach (var key in _names.Keys.ToList())
+            foreach (var roles in _menus.Values)
             {
-                if (_names[key].Contains(oldName, StringComparer.Ordinal))
+                if (roles.Contains(oldName, StringComparer.Ordinal))
                 {
-                    _names[key] = _names[key]
-                        .Select(r => string.Equals(r, oldName, StringComparison.Ordinal) ? newName : r)
-                        .ToList();
+                    for (var i = 0; i < roles.Count; i++)
+                    {
+                        if (string.Equals(roles[i], oldName, StringComparison.Ordinal))
+                        {
+                            roles[i] = newName;
+                        }
+                    }
                     affected++;
                 }
             }
@@ -531,6 +598,17 @@ public sealed class RoleAdminServiceTests
     private sealed class NoopAuditWriter : IOperationAuditWriter
     {
         public Task RecordAsync(OperationAuditEntry entry, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class RecordingAuditWriter : IOperationAuditWriter
+    {
+        public List<OperationAuditEntry> Entries { get; } = [];
+
+        public Task RecordAsync(OperationAuditEntry entry, CancellationToken cancellationToken)
+        {
+            Entries.Add(entry);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class RecordingMenuConfigDal : IMenuConfigDal
@@ -611,6 +689,12 @@ public sealed class RoleAdminServiceTests
             InvalidatedUserIds.Add(userId);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class FailingAuditWriter : IOperationAuditWriter
+    {
+        public Task RecordAsync(OperationAuditEntry entry, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("audit write failed");
     }
 
     private sealed class RecordingUnitOfWork : IUnitOfWork

@@ -47,9 +47,12 @@ public sealed class RoleAdminService(
         return enriched;
     }
 
-    /// <summary>新建角色。校验格式、不重名。仅 Admin 是受保护的系统角色，其余运行时实例都可创建。</summary>
+    /// <summary>新建角色。校验格式、不重名。仅 Admin 是受保护的系统角色，其余运行时实例都可创建。事务内完成角色创建 + role.create 审计写入。</summary>
     /// <exception cref="ArgumentException">格式非法 / 已存在。</exception>
-    public async Task<RoleDto> CreateRoleAsync(CreateRoleRequest request, CancellationToken cancellationToken)
+    public async Task<RoleDto> CreateRoleAsync(
+        ActorContext actor,
+        CreateRoleRequest request,
+        CancellationToken cancellationToken)
     {
         var name = (request.Name ?? string.Empty).Trim();
         RoleDomainService.EnsureName(name);
@@ -59,18 +62,35 @@ public sealed class RoleAdminService(
             throw new ArgumentException($"角色 {name} 已存在。", nameof(request.Name));
         }
 
-        return await roleAdmin.CreateRoleAsync(name, cancellationToken);
+        // 角色创建 + 审计写入包在同一事务内：任一失败则全部回滚，避免"角色已建但无审计"的不一致。
+        await unitOfWork.ExecuteAsync(async innerCt =>
+        {
+            await roleAdmin.CreateRoleAsync(name, innerCt);
+
+            await auditWriter.RecordAsync(new OperationAuditEntry(
+                actor.Id,
+                actor.Name,
+                OperationAuditActions.RoleCreate,
+                "role",
+                name,
+                $"{actor.Name} 创建了角色 {name}"), innerCt);
+        }, cancellationToken);
+
+        return new RoleDto(name, RoleDomainService.IsAdmin(name), 0, 0, []);
     }
 
     /// <summary>
-    /// 删除角色：Admin 受保护拒绝；存在性校验；引用数任一 > 0 拒绝；事务内级联删 menu_config_record.Roles 引用 + 删 AspNetRoles + 轮换受影响用户 stamp + 撤销 refresh。
+    /// 删除角色：Admin 受保护拒绝；存在性校验；引用数任一 > 0 拒绝；事务内级联删 menu_config_record.Roles 引用 + 删 AspNetRoles + 轮换受影响用户 stamp + 撤销 refresh + 记录 role.delete 审计。
     /// </summary>
     /// <exception cref="ArgumentException">Admin 受保护 / 角色名格式非法 / 仍被用户或菜单引用。</exception>
     /// <returns>true=已删除；false=角色不存在。</returns>
-    public async Task<bool> DeleteAsync(string name, CancellationToken cancellationToken)
+    public async Task<bool> DeleteAsync(
+        ActorContext actor,
+        string name,
+        CancellationToken cancellationToken)
     {
         RoleDomainService.EnsureName(name);
-        if (RoleDomainService.IsReserved(name))
+        if (RoleDomainService.IsAdmin(name))
         {
             throw new ArgumentException($"系统角色 {name} 不可删除。", nameof(name));
         }
@@ -112,6 +132,15 @@ public sealed class RoleAdminService(
                     await refreshSessions.RevokeAllAsync(userId, innerCt);
                     rotated.Add(userId);
                 }
+
+                // 审计：role.delete。
+                await auditWriter.RecordAsync(new OperationAuditEntry(
+                    actor.Id,
+                    actor.Name,
+                    OperationAuditActions.RoleDelete,
+                    "role",
+                    name,
+                    $"{actor.Name} 删除了角色 {name}（影响 {affectedUsers.Count} 个用户）"), innerCt);
             }, cancellationToken);
         }
         catch

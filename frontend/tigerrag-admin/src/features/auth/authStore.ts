@@ -61,7 +61,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     clearCachedSession()
     set({ accessToken: null, user: null })
   },
-  clearMemoryOnly: () => set({ accessToken: null, user: null }),
+  /// <summary>仅清空 access token，保留 user 与 sessionStorage 缓存；用于刷新失败时让 UI 留在原页，让下次 API 请求重新触发刷新。</summary>
+  clearMemoryOnly: () => set({ accessToken: null }),
 }))
 
 /// <summary>页面加载时调用：从 sessionStorage 恢复会话（如果有），避免 F5 后因 cookie 未发送导致闪跳登录页。</summary>

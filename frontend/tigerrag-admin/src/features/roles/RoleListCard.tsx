@@ -11,12 +11,12 @@ import {
   message,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useCreateRole, useDeleteRole, useRoles, useUpdateRole } from './useRoles'
 import type { RoleDto } from './rolesApi'
 
 interface RoleRow {
-  key: string
+  id: string
   name: string
   isSystem: boolean
   userCount: number
@@ -91,7 +91,7 @@ export function RoleListCard() {
   }
 
   const rows: RoleRow[] = roles.map((role) => ({
-    key: role.name,
+    id: role.name,
     name: role.name,
     isSystem: role.isSystem,
     userCount: role.userCount,
@@ -99,8 +99,8 @@ export function RoleListCard() {
     menuNames: role.menuNames ?? [],
   }))
 
-  const columns: ColumnsType<RoleRow> = [
-    { title: '角色名', dataIndex: 'name', key: 'name', width: 200 },
+  const columns: ColumnsType<RoleRow> = useMemo(() => [
+    { title: '角色名', key: 'name', width: 200, render: (_value, row) => row.name },
     {
       title: '类型',
       key: 'kind',
@@ -189,7 +189,7 @@ export function RoleListCard() {
         )
       },
     },
-  ]
+  ], [deleteMutation.isPending])
 
   const editing = typeof modalMode === 'object' ? modalMode.edit : null
   const submitting = createMutation.isPending || updateMutation.isPending
@@ -206,7 +206,7 @@ export function RoleListCard() {
         </Button>
       </Space>
       <Table<RoleRow>
-        rowKey="key"
+        rowKey={(record) => record.id}
         loading={isPending}
         dataSource={rows}
         columns={columns}

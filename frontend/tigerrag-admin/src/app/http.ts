@@ -64,8 +64,12 @@ export async function http<T>(path: string, options: HttpOptions = {}): Promise<
     if (error instanceof ApiError) {
       showError(error)
       if (error.code === 40100 && retryOnAuth) {
-        // execute 内部已尝试过一次刷新；这里只负责把"刷新也救不回来"翻译成登出。
-        useAuthStore.getState().clear()
+        // 刷新失败：仅清空 access token，保留 user 让 UI 留在原页。
+        // 下次 API 请求会读到 accessToken === null，发送时不带 Authorization 头，
+        // 后端返回 401 → execute 内部再次尝试刷新。反复失败也不会踢出登录页，
+        // 避免一次暂时性刷新失败（网络抖动等）就把用户踢回登录页。
+        // sessionStorage 缓存同时保留：若整个页面被刷新，仍可由 restoreSessionFromCache 恢复。
+        useAuthStore.getState().clearMemoryOnly()
       }
     }
     throw error

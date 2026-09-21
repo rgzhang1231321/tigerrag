@@ -3,6 +3,7 @@ import { refreshSession } from '../auth/authApi'
 import { useAuthStore } from '../auth/authStore'
 import { queryKeys } from '../../app/http'
 import { listRolesAll } from '../roles/rolesApi'
+import type { RoleDto } from '../roles/rolesApi'
 import {
   assignRoles,
   computePasswordHash,
@@ -26,15 +27,14 @@ export function useUsers() {
 
 /// <summary>
 /// 列出全部角色名（按字母序）。后端返回 RoleDto 列表，前端只取 name 字段。
-/// 缓存键 queryKeys.roles 与 useRoles 共享，便于角色 CRUD 后自动联动刷新。
+/// 缓存键 queryKeys.roles 与 useRoles 共享，通过 select 在视图层转为 string[]，避免重写缓存把 useRoles 的 RoleDto[] 数据抹掉。
+/// 角色 CRUD 后 useRoles 的 onSuccess 会 invalidateQueries 该键，本 hook 自动联动刷新。
 /// </summary>
 export function useUserRoles() {
-  return useQuery({
+  return useQuery<RoleDto[], Error, string[]>({
     queryKey: queryKeys.roles,
-    queryFn: async () => {
-      const roles = await listRolesAll()
-      return roles.map((role) => role.name).sort((a, b) => a.localeCompare(b))
-    },
+    queryFn: listRolesAll,
+    select: (roles) => roles.map((role) => role.name).sort((a, b) => a.localeCompare(b)),
   })
 }
 
