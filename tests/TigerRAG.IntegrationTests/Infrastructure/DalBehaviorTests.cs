@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using TigerRAG.Infrastructure.Dal;
+using TigerRAG.Infrastructure.Documents.Dal;
 using TigerRAG.Infrastructure.Persistence;
-using TigerRAG.Infrastructure.Persistence.Entities;
+using TigerRAG.Infrastructure.Persistence.Entities.Documents;
+using TigerRAG.Infrastructure.Users;
 
 namespace TigerRAG.IntegrationTests.Infrastructure;
 

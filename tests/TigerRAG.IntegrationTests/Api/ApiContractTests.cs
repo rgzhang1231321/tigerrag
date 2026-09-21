@@ -14,7 +14,11 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using StackExchange.Redis;
 using TigerRAG.Api;
 using TigerRAG.Api.Hubs;
-using TigerRAG.Application.Security;
+using TigerRAG.Application.Auth;
+using TigerRAG.Application.Documents;
+using TigerRAG.Application.OperationAudit;
+using TigerRAG.Application.Shared;
+using TigerRAG.Application.Users;
 
 namespace TigerRAG.IntegrationTests.Api;
 
@@ -126,7 +130,7 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
         var cookie = Assert.Single(response.Headers.GetValues("Set-Cookie"));
         Assert.Contains("tigerrag.refresh=", cookie);
         Assert.Contains("httponly", cookie, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("samesite=strict", cookie, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("samesite=lax", cookie, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -422,7 +426,8 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
         IUserDal users,
         IDocumentAccessDal? documentAccess = null,
         IUserCredentialDal? credentials = null,
-        IRefreshSessionDal? refreshSessions = null) =>
+        IRefreshSessionDal? refreshSessions = null,
+        IOperationAuditWriter? auditWriter = null) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("Jwt:Issuer", "TigerRAG.Tests");
@@ -439,6 +444,8 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
                 services.AddSingleton(credentials ?? new StubUserCredentialDal());
                 services.RemoveAll<IRefreshSessionDal>();
                 services.AddSingleton(refreshSessions ?? new StubRefreshSessionDal());
+                services.RemoveAll<IOperationAuditWriter>();
+                services.AddSingleton(auditWriter ?? new StubOperationAuditWriter());
                 if (documentAccess is not null)
                 {
                     services.RemoveAll<IDocumentAccessDal>();
@@ -631,6 +638,15 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
         }
 
         public Task RevokeAllAsync(Guid userId, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<UserAccount?> GetUserByTokenAsync(string value, CancellationToken cancellationToken) =>
+            Task.FromResult<UserAccount?>(null);
+    }
+
+    private sealed class StubOperationAuditWriter : IOperationAuditWriter
+    {
+        public Task RecordAsync(OperationAuditEntry entry, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
     }
 
     private sealed record ApiEnvelope<T>(int Code, string Message, T? Data);

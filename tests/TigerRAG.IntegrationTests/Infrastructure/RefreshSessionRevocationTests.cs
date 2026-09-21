@@ -1,10 +1,13 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using TigerRAG.Application.Security;
+using TigerRAG.Application.Auth;
+using TigerRAG.Application.Users;
+using TigerRAG.Infrastructure.Auth.Dal;
 using TigerRAG.Infrastructure.Dal;
 using TigerRAG.Infrastructure.Identity;
 using TigerRAG.Infrastructure.Persistence;
+using TigerRAG.Infrastructure.Persistence.Entities.Auth;
 
 namespace TigerRAG.IntegrationTests.Infrastructure;
 
@@ -116,7 +119,7 @@ public sealed class RefreshSessionRevocationTests : IAsyncLifetime
         var stamp = await userManager.GetSecurityStampAsync(user);
         var tokenHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(rawToken)));
-        var record = new TigerRAG.Infrastructure.Persistence.Entities.refresh_token_record
+        var record = new TigerRAG.Infrastructure.Persistence.Entities.Auth.refresh_token_record
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,

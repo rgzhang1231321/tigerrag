@@ -4,7 +4,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
-using TigerRAG.Application.Security;
+using TigerRAG.Application.Auth;
+using TigerRAG.Application.Users;
 
 namespace TigerRAG.Api.Security;
 

@@ -1,4 +1,4 @@
-using TigerRAG.Application.Security;
+using TigerRAG.Application.Shared;
 
 namespace TigerRAG.Api.Common;
 

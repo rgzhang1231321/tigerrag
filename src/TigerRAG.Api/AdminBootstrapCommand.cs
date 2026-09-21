@@ -1,4 +1,4 @@
-using TigerRAG.Application.Security;
+using TigerRAG.Application.Auth;
 
 namespace TigerRAG.Api;
 

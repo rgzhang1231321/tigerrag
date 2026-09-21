@@ -28,7 +28,7 @@ const UsersPage = lazy(() =>
   import('../features/users/UsersPage').then((module) => ({ default: module.UsersPage })),
 )
 const RolesPage = lazy(() =>
-  import('../features/users/RolesPage').then((module) => ({ default: module.RolesPage })),
+  import('../features/roles/RolesPage').then((module) => ({ default: module.RolesPage })),
 )
 const AuditPage = lazy(() =>
   import('../features/audit/AuditPage').then((module) => ({ default: module.AuditPage })),

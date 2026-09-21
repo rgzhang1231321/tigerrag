@@ -1,12 +1,17 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using TigerRAG.Application.Security;
+using TigerRAG.Application.Documents;
+using TigerRAG.Application.Shared;
+using TigerRAG.Application.Users;
 using TigerRAG.Domain.Documents;
 using TigerRAG.Infrastructure.Dal;
+using TigerRAG.Infrastructure.Documents.Dal;
 using TigerRAG.Infrastructure.Identity;
 using TigerRAG.Infrastructure.Persistence;
-using TigerRAG.Infrastructure.Persistence.Entities;
+using TigerRAG.Infrastructure.Persistence.Entities.Documents;
+using TigerRAG.Infrastructure.Persistence.Entities.KnowledgeBases;
+using TigerRAG.Infrastructure.Users;
 
 namespace TigerRAG.IntegrationTests.Infrastructure;
 

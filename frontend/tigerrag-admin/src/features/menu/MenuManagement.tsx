@@ -24,7 +24,7 @@ import {
 import type { MenuConfigDto } from './menuApi'
 import { AVAILABLE_ICONS } from './menuIcons'
 import { ALL_ROLES } from '../auth/permissions'
-import { useRoles } from '../users/useRoles'
+import { useRoles } from '../roles/useRoles'
 
 interface MenuForm {
   key: string

@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using TigerRAG.Application.Security;
+using TigerRAG.Application.Users;
 using TigerRAG.Infrastructure.Persistence;
 
 namespace TigerRAG.Infrastructure.Dal;

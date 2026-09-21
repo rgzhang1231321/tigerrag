@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { refreshSession } from '../auth/authApi'
 import { useAuthStore } from '../auth/authStore'
 import { queryKeys } from '../../app/http'
-import { listRolesAll } from './rolesApi'
+import { listRolesAll } from '../roles/rolesApi'
 import {
   assignRoles,
   computePasswordHash,

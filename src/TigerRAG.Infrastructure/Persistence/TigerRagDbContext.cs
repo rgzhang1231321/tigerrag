@@ -1,9 +1,16 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
-using TigerRAG.Application.Security;
+using TigerRAG.Application.Shared;
 using TigerRAG.Infrastructure.Identity;
 using TigerRAG.Infrastructure.Persistence.Entities;
+using TigerRAG.Infrastructure.Persistence.Entities.ApiLogs;
+using TigerRAG.Infrastructure.Persistence.Entities.Auth;
+using TigerRAG.Infrastructure.Persistence.Entities.Conversations;
+using TigerRAG.Infrastructure.Persistence.Entities.Documents;
+using TigerRAG.Infrastructure.Persistence.Entities.KnowledgeBases;
+using TigerRAG.Infrastructure.Persistence.Entities.Menus;
+using TigerRAG.Infrastructure.Persistence.Entities.OperationAudit;
 
 namespace TigerRAG.Infrastructure.Persistence;
 
@@ -23,6 +30,7 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
     public DbSet<refresh_token_record> RefreshTokens => Set<refresh_token_record>();
     public DbSet<menu_config_record> MenuConfigs => Set<menu_config_record>();
     public DbSet<api_log_record> ApiLogs => Set<api_log_record>();
+    public DbSet<operation_audit_record> OperationAudits => Set<operation_audit_record>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -41,6 +49,7 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
         ConfigureRefreshTokens(builder);
         ConfigureMenuConfigs(builder);
         ConfigureApiLogs(builder);
+        ConfigureOperationAudits(builder);
         SeedRoles(builder);
     }
 
@@ -158,6 +167,22 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
             entity.Property(value => value.ElapsedMs).HasColumnName("elapsed_ms");
             entity.HasIndex(value => value.RequestId);
             entity.HasIndex(value => value.Timestamp);
+        });
+    }
+
+    private static void ConfigureOperationAudits(ModelBuilder builder)
+    {
+        builder.Entity<operation_audit_record>(entity =>
+        {
+            entity.ToTable("operation_audit_record");
+            entity.Property(value => value.ActorName).HasMaxLength(64);
+            entity.Property(value => value.Action).HasMaxLength(64);
+            entity.Property(value => value.TargetType).HasMaxLength(64);
+            entity.Property(value => value.TargetId).HasMaxLength(128);
+            entity.Property(value => value.Summary).HasMaxLength(500);
+            entity.HasIndex(value => value.CreatedAt).IsDescending();
+            entity.HasIndex(value => value.ActorId);
+            entity.HasIndex(value => value.Action);
         });
     }
 

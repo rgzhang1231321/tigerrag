@@ -1,7 +1,9 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.Extensions.Options;
-using TigerRAG.Application.Security;
+using TigerRAG.Application.Shared;
+using TigerRAG.Application.Users;
+using TigerRAG.Infrastructure.Auth;
 using TigerRAG.Infrastructure.Identity;
 
 namespace TigerRAG.IntegrationTests.Identity;

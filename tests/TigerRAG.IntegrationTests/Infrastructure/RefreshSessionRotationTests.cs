@@ -2,10 +2,13 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using TigerRAG.Application.Security;
+using TigerRAG.Application.Auth;
+using TigerRAG.Application.Users;
+using TigerRAG.Infrastructure.Auth.Dal;
 using TigerRAG.Infrastructure.Dal;
 using TigerRAG.Infrastructure.Identity;
 using TigerRAG.Infrastructure.Persistence;
+using TigerRAG.Infrastructure.Persistence.Entities.Auth;
 
 namespace TigerRAG.IntegrationTests.Infrastructure;
 
@@ -138,7 +141,7 @@ public sealed class RefreshSessionRotationTests : IAsyncLifetime
             System.Text.Encoding.UTF8.GetBytes(rawToken)));
         // stamp 必须与用户当前 stamp 一致，否则 RotateAsync 在新检查下会拒轮换。
         var stamp = await userManager.GetSecurityStampAsync(user);
-        var record = new TigerRAG.Infrastructure.Persistence.Entities.refresh_token_record
+        var record = new TigerRAG.Infrastructure.Persistence.Entities.Auth.refresh_token_record
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,

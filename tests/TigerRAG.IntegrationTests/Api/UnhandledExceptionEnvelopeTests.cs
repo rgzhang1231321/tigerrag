@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using TigerRAG.Application.Security;
+using TigerRAG.Application.Users;
 using TigerRAG.Api.Common;
 
 namespace TigerRAG.IntegrationTests.Api;

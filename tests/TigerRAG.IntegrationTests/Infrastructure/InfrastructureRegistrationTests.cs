@@ -4,12 +4,22 @@ using Microsoft.Extensions.DependencyInjection;
 using Minio;
 using Qdrant.Client;
 using StackExchange.Redis;
-using TigerRAG.Application.Security;
+using TigerRAG.Application.Auth;
+using TigerRAG.Application.Documents;
+using TigerRAG.Application.Users;
 using TigerRAG.Infrastructure;
+using TigerRAG.Infrastructure.Auth;
 using TigerRAG.Infrastructure.Dal;
+using TigerRAG.Infrastructure.Documents.Dal;
 using TigerRAG.Infrastructure.Identity;
 using TigerRAG.Infrastructure.Persistence;
-using TigerRAG.Infrastructure.Persistence.Entities;
+using TigerRAG.Infrastructure.Persistence.Entities.Auth;
+using TigerRAG.Infrastructure.Persistence.Entities.Conversations;
+using TigerRAG.Infrastructure.Persistence.Entities.Documents;
+using TigerRAG.Infrastructure.Persistence.Entities.KnowledgeBases;
+using TigerRAG.Infrastructure.Persistence.Entities.Menus;
+using TigerRAG.Infrastructure.Persistence.Entities.OperationAudit;
+using TigerRAG.Infrastructure.Users;
 
 namespace TigerRAG.IntegrationTests.Infrastructure;
 

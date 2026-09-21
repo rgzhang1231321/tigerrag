@@ -1,10 +1,20 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using TigerRAG.Application.Security;
+using TigerRAG.Application.Auth;
+using TigerRAG.Application.Menus;
+using TigerRAG.Application.OperationAudit;
+using TigerRAG.Application.Roles;
+using TigerRAG.Application.Shared;
+using TigerRAG.Application.Users;
+using TigerRAG.Infrastructure.Auth.Dal;
 using TigerRAG.Infrastructure.Dal;
 using TigerRAG.Infrastructure.Identity;
+using TigerRAG.Infrastructure.Menus.Dal;
+using TigerRAG.Infrastructure.OperationAudit.Dal;
 using TigerRAG.Infrastructure.Persistence;
+using TigerRAG.Infrastructure.Roles.Dal;
+using TigerRAG.Infrastructure.Users;
 using TigerRAG.IntegrationTests;
 
 namespace TigerRAG.IntegrationTests.Infrastructure;
@@ -198,6 +208,8 @@ public sealed class UserRoleServiceAtomicityTests : IAsyncLifetime
         services.AddScoped<IMenuConfigDal, MenuConfigDal>();
         services.AddScoped<IRoleAdmin, RoleAdminDal>();
         services.AddScoped<RoleAdminService>();
+        services.AddScoped<IOperationAuditDal, OperationAuditDal>();
+        services.AddScoped<IOperationAuditWriter, OperationAuditDal>();
         return services.BuildServiceProvider();
     }
 

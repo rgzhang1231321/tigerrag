@@ -5,10 +5,26 @@ using Microsoft.Extensions.DependencyInjection;
 using Minio;
 using Qdrant.Client;
 using StackExchange.Redis;
-using TigerRAG.Application.Security;
+using TigerRAG.Application.ApiLogs;
+using TigerRAG.Application.Auth;
+using TigerRAG.Application.Documents;
+using TigerRAG.Application.Menus;
+using TigerRAG.Application.OperationAudit;
+using TigerRAG.Application.Roles;
+using TigerRAG.Application.Statistics;
+using TigerRAG.Application.Users;
+using TigerRAG.Infrastructure.ApiLogs.Dal;
+using TigerRAG.Infrastructure.Auth;
+using TigerRAG.Infrastructure.Auth.Dal;
 using TigerRAG.Infrastructure.Dal;
+using TigerRAG.Infrastructure.Documents.Dal;
 using TigerRAG.Infrastructure.Identity;
+using TigerRAG.Infrastructure.Menus.Dal;
+using TigerRAG.Infrastructure.OperationAudit.Dal;
 using TigerRAG.Infrastructure.Persistence;
+using TigerRAG.Infrastructure.Roles.Dal;
+using TigerRAG.Infrastructure.Statistics.Dal;
+using TigerRAG.Infrastructure.Users;
 
 namespace TigerRAG.Infrastructure;
 
@@ -61,6 +77,8 @@ public static class InfrastructureComposition
         services.AddScoped<IStatisticsService, StatisticsService>();
         services.AddScoped<IApiLogDal, ApiLogDal>();
         services.AddScoped<ApiLogService>();
+        services.AddScoped<IOperationAuditDal, OperationAuditDal>();
+        services.AddScoped<IOperationAuditWriter, OperationAuditDal>();
 
         services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(
             configuration.GetConnectionString("Redis")

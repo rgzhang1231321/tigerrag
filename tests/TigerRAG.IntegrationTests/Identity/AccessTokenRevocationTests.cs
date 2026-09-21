@@ -8,7 +8,9 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TigerRAG.Api;
-using TigerRAG.Application.Security;
+using TigerRAG.Application.Auth;
+using TigerRAG.Application.Shared;
+using TigerRAG.Application.Users;
 
 namespace TigerRAG.IntegrationTests.Identity;
 
@@ -250,5 +252,7 @@ public sealed class AccessTokenRevocationTests
 
         public Task RevokeAsync(string value, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task RevokeAllAsync(Guid userId, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<UserAccount?> GetUserByTokenAsync(string value, CancellationToken cancellationToken) =>
+            Task.FromResult<UserAccount?>(null);
     }
 }
