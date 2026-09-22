@@ -17,6 +17,9 @@ public sealed class document_record
     /// <summary>对象存储中的对象 Key（MinIO 路径）。</summary>
     public required string StoragePath { get; set; }
 
+    /// <summary>文件 MIME 类型（如 application/pdf）；上传时从 IFormFile.ContentType 填入，Worker 启动恢复扫描 Pending 文档时决定解析器分发。</summary>
+    public string? MimeType { get; set; }
+
     /// <summary>文档处理状态；状态机由 Domain 维护，此处仅持久化。</summary>
     public DocumentStatus Status { get; set; }
 
