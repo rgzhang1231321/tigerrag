@@ -45,11 +45,11 @@ public sealed class AdminBootstrapper(
         }
 
         // 为 Admin 角色灌全部 [MenuEndpoint] 授权：删除 MenuEndpointAuthFilter 的 Admin bypass 后，Admin 默认全通靠这一步保证。
-        await EnsureAdminGrantsAsync(created.Id, cancellationToken);
+        await EnsureAdminGrantsAsync(Guid.Empty, cancellationToken);
     }
 
     /// <summary>对 Admin 角色灌全部已注册 endpoint 的授权；已存在的 (RoleName, EndpointKey) 行被 GrantAllInMenuAsync 幂等跳过。</summary>
-    private async Task EnsureAdminGrantsAsync(Guid bootstrapUserId, CancellationToken cancellationToken)
+    public async Task EnsureAdminGrantsAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var endpoints = menuEndpoints.All;
@@ -61,7 +61,23 @@ public sealed class AdminBootstrapper(
         if (missing.Count == 0) return;
 
         // 菜单分组用 "__all__" 作为兜底桶；真实授权 UI 按真实 MenuKey 分组显示，这一桶仅作启动兜底导入。
-        await grants.GrantAllInMenuAsync("Admin", "__all__", missing, bootstrapUserId, cancellationToken);
+        // 启动期灌入不属于任何具体用户时 grantedBy 记 Guid.Empty，与 bootstrap 灌入可区分。
+        await grants.GrantAllInMenuAsync("Admin", "__all__", missing, Guid.Empty, cancellationToken);
+    }
+
+    private async Task EnsureAdminGrantsAsync(Guid grantedBy, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var endpoints = menuEndpoints.All;
+        if (endpoints.Count == 0) return;
+
+        var existing = await grants.ListByRoleAsync("Admin", cancellationToken);
+        var existingKeys = existing.Select(g => g.EndpointKey).ToHashSet(StringComparer.Ordinal);
+        var missing = endpoints.Where(ep => !existingKeys.Contains(ep.EndpointKey)).ToList();
+        if (missing.Count == 0) return;
+
+        // 菜单分组用 "__all__" 作为兜底桶；真实授权 UI 按真实 MenuKey 分组显示，这一桶仅作启动兜底导入。
+        await grants.GrantAllInMenuAsync("Admin", "__all__", missing, grantedBy, cancellationToken);
     }
 
     // UserAccount 不暴露 salt；通过 FindByIdAsync 重新拉一次以读取 PasswordSalt 字段。

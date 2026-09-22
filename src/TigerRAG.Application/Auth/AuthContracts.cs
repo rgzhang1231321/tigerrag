@@ -58,4 +58,11 @@ public interface IUserSecurityStampRotator
 public interface IAdminBootstrapper
 {
     Task BootstrapAsync(string userName, string password, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 幂等补齐 Admin 角色在全部已注册 endpoint 上的授权。存量数据库里若 Admin 角色无 grant，
+    /// 常规启动时调用一次可让存量 admin 立刻能用；新部署由 <c>--bootstrap-admin</c> 在
+    /// <see cref="BootstrapAsync"/> 内部完成灌入。
+    /// </summary>
+    Task EnsureAdminGrantsAsync(CancellationToken cancellationToken);
 }

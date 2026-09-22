@@ -63,5 +63,8 @@ public sealed class AdminBootstrapCommandTests
             Password = password;
             return Task.CompletedTask;
         }
+
+        public Task EnsureAdminGrantsAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
     }
 }
