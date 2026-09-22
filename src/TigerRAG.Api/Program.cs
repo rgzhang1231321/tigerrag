@@ -28,13 +28,6 @@ try
 
     var app = builder.Build();
     app.MapTigerRagApi();
-    // 启动期幂等补齐 Admin 角色的 [MenuEndpoint] 授权。存量数据库里 Admin 角色无 grant 时，
-    // 首次启动自动灌全；后续启动 ListByRoleAsync 已含全部 endpoint，秒级返回不写库。
-    using (var scope = app.Services.CreateScope())
-    {
-        var bootstrapper = scope.ServiceProvider.GetRequiredService<TigerRAG.Application.Auth.IAdminBootstrapper>();
-        await bootstrapper.EnsureAdminGrantsAsync(CancellationToken.None);
-    }
     await app.RunAsync();
 }
 catch (Exception ex)
