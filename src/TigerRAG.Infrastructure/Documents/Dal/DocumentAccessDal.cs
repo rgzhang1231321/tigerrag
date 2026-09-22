@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TigerRAG.Application.Documents;
+using TigerRAG.Application.Shared;
 using TigerRAG.Application.Users;
 using TigerRAG.Infrastructure.Persistence;
 using TigerRAG.Infrastructure.Persistence.Entities.Documents;

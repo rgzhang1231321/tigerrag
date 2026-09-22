@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using TigerRAG.Application.Auth;
+using TigerRAG.Application.Shared;
 using TigerRAG.Application.Users;
 using TigerRAG.Infrastructure.Identity;
 using TigerRAG.Infrastructure.Persistence;

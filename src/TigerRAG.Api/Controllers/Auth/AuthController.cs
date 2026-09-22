@@ -3,8 +3,8 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TigerRAG.Api.Common;
-using TigerRAG.Application.Auth;
 using TigerRAG.Api.Controllers.Users;
+using TigerRAG.Application.Auth;
 
 namespace TigerRAG.Api.Controllers.Auth;
 
@@ -174,20 +174,3 @@ public sealed class AuthController(AuthService authService) : ControllerBase
         Path = "/api/auth"
     };
 }
-
-public sealed record SaltRequest([Required] string UserName);
-
-public sealed record SaltResponse(string Salt);
-
-public sealed record LoginRequest(
-    [Required] string UserName,
-    [Required] string PasswordHash);
-
-public sealed record LoginResponse(
-    string AccessToken,
-    DateTimeOffset ExpiresAt,
-    UserResponse User);
-
-public sealed record ChangePasswordRequest(
-    [Required] string CurrentPasswordHash,
-    [Required] string NewPasswordHash);

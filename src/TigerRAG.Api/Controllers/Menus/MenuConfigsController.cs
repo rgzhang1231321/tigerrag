@@ -1,6 +1,5 @@
-using Microsoft.AspNetCore.Mvc;
-using System.Collections.Generic;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 using TigerRAG.Api.Common;
 using TigerRAG.Application.Auth;
 using TigerRAG.Application.Menus;
@@ -113,22 +112,3 @@ public sealed class MenuConfigsController(UserRoleService userRoles) : Controlle
             : Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, "菜单项不存在"));
     }
 }
-
-/// <summary>新建菜单配置请求。Roles 为空数组表示所有人可见。</summary>
-public sealed record CreateMenuConfigRequest(
-    string Key,
-    string Label,
-    string? Icon,
-    string[] Roles,
-    Guid? ParentId,
-    int SortOrder,
-    bool IsEnabled);
-
-/// <summary>更新菜单配置请求：每个字段 null 表示"不修改"。</summary>
-public sealed record UpdateMenuConfigApiRequest(
-    string? Label,
-    string? Icon,
-    string[]? Roles,
-    Guid? ParentId,
-    int? SortOrder,
-    bool? IsEnabled);

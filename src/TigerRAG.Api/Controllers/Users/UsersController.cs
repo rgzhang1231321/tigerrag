@@ -241,21 +241,3 @@ public sealed class UsersController(
     private static bool TryValidatePasswordHash(string passwordHash, out string error) =>
         PasswordHashValidator.TryValidate(passwordHash, out error);
 }
-
-public sealed record UserResponse(Guid Id, string UserName, IReadOnlyList<string> Roles, bool IsLocked)
-{
-    public static UserResponse From(UserListItem user) => new(user.Id, user.UserName, user.Roles, user.IsLocked);
-    public static UserResponse From(UserAccount user) => new(user.Id, user.UserName, user.Roles, false);
-}
-
-public sealed record AssignRolesRequest([Required] IReadOnlyCollection<string> Roles);
-
-public sealed record CreateUserRequest(
-    [Required] string UserName,
-    [Required] IReadOnlyCollection<string> Roles);
-
-public sealed record SetInitialPasswordRequest([Required] string PasswordHash);
-
-public sealed record ResetPasswordRequest([Required] string PasswordHash);
-
-public sealed record SetLockoutRequest([Required] bool Locked);

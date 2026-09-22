@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using TigerRAG.Application.Statistics;
+using TigerRAG.Application.Statistics.Dashboard;
+using TigerRAG.Application.Statistics.Reports;
 using TigerRAG.Domain.Documents;
 using Xunit;
 

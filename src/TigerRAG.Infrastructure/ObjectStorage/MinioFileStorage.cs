@@ -1,7 +1,8 @@
 using Microsoft.Extensions.Options;
 using Minio;
+using Minio.DataModel.Args;
 using Minio.Exceptions;
-using TigerRAG.Application.Documents;
+using TigerRAG.Application.Documents.Indexing;
 
 namespace TigerRAG.Infrastructure.ObjectStorage;
 
@@ -18,13 +19,22 @@ public sealed class MinioFileStorage : IDocumentFileStorage
             ?? throw new InvalidOperationException($"{ObjectStorageOptions.DefaultSectionName}:Bucket is required.");
     }
 
-    public async Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken)
+    public Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return await _client.GetObjectAsync(new GetObjectArgs()
+        // MinIO 7.0 用回调流替代了直接返回；用 TaskCompletionSource 桥接到 Task<Stream>。
+        var tcs = new TaskCompletionSource<Stream>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var args = new GetObjectArgs()
             .WithBucket(_bucket)
             .WithObject(path)
-            .WithCallbackStream(stream => stream));
+            .WithCallbackStream((stream, cancellationToken) =>
+            {
+                tcs.TrySetResult(stream);
+                return Task.CompletedTask;
+            });
+        // 同步启动，调用方 await tcs.Task 拿到流；MinIO 回调内会填充。
+        _ = _client.GetObjectAsync(args, cancellationToken);
+        return tcs.Task;
     }
 
     public async Task<bool> WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken)

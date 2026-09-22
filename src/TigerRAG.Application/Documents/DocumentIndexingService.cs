@@ -1,3 +1,5 @@
+using TigerRAG.Application.Documents.Indexing;
+
 namespace TigerRAG.Application.Documents;
 
 /// <summary>文档索引编排服务。流水线：下载 → 解析 → 分块 → Embedding → 写入向量库 → 更新状态。</summary>

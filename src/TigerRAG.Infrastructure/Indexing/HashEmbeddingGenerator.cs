@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
-using TigerRAG.Application.Documents;
+using TigerRAG.Application.Documents.Indexing;
 
 namespace TigerRAG.Infrastructure.Indexing;
 

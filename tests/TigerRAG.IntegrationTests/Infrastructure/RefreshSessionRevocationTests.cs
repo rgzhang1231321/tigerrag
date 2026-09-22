@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using TigerRAG.Application.Auth;
+using TigerRAG.Application.Shared;
 using TigerRAG.Application.Users;
 using TigerRAG.Infrastructure.Auth.Dal;
 using TigerRAG.Infrastructure.Dal;

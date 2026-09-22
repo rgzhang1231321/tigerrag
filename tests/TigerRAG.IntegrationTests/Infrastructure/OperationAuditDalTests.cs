@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using TigerRAG.Application.OperationAudit;
+using TigerRAG.Application.Shared;
 using TigerRAG.Application.Users;
 using TigerRAG.Infrastructure.Dal;
 using TigerRAG.Infrastructure.OperationAudit.Dal;

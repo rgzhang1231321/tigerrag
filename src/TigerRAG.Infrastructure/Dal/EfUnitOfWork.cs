@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using TigerRAG.Application.Shared;
 using TigerRAG.Application.Users;
 using TigerRAG.Infrastructure.Persistence;
 

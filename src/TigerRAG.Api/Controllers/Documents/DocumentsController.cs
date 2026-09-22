@@ -64,7 +64,3 @@ public sealed class DocumentsController(DocumentAccessService documentAccess) : 
         }
     }
 }
-
-public sealed record ReplaceDocumentPermissionsRequest(
-    [Required] IReadOnlyCollection<Guid> UserIds,
-    [Required] IReadOnlyCollection<string> Roles);

@@ -1,19 +1,5 @@
 namespace TigerRAG.Application.Auth;
 
-/// <summary>角色-Endpoint 授权记录。</summary>
-public sealed record RoleEndpointGrant(
-    string RoleName,
-    string MenuKey,
-    string EndpointKey,
-    DateTimeOffset GrantedAt,
-    Guid GrantedBy);
-
-/// <summary>单条目标授权变更（最终态）：true=授予、false=撤销；仅授予项会落库。</summary>
-public sealed record BatchEndpointChange(
-    string MenuKey,
-    string EndpointKey,
-    bool Granted);
-
 /// <summary>角色-Endpoint 授权 DAL 端口。Application 层用它完成授权/撤销/查询。</summary>
 public interface IRoleEndpointGrantStore
 {

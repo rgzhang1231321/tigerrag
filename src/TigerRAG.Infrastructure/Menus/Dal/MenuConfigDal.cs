@@ -136,6 +136,4 @@ public sealed class MenuConfigDal(TigerRagDbContext dbContext) : IMenuConfigDal
         }
         return depth;
     }
-
-    private sealed record MenuNode(Guid Id, Guid? ParentId);
 }

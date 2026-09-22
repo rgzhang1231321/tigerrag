@@ -42,10 +42,4 @@ public sealed class TigerRagSqlLogger(string category, IHttpContextAccessor acce
             Exception: exception?.ToString(),
             ElapsedMs: 0));
     }
-
-    private sealed class NullScope : IDisposable
-    {
-        public static readonly NullScope Instance = new();
-        public void Dispose() { }
-    }
 }

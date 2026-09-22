@@ -1,3 +1,6 @@
+using TigerRAG.Application.Statistics.Dashboard;
+using TigerRAG.Application.Statistics.Reports;
+
 namespace TigerRAG.Application.Statistics;
 
 /// <summary>Dashboard 统计服务：直接转发 DAL 聚合结果，无额外业务规则。</summary>

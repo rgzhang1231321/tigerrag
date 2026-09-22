@@ -15,5 +15,3 @@ public sealed class SystemController : ControllerBase
     public ActionResult<ApiResponse<ApiDescriptor>> GetDescriptor() =>
         Ok(ApiResponse.Success(new ApiDescriptor("TigerRAG.Api", "v1")));
 }
-
-public sealed record ApiDescriptor(string Name, string Version);

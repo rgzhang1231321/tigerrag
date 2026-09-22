@@ -1,6 +1,5 @@
 using TigerRAG.Application.OperationAudit;
 using TigerRAG.Application.Shared;
-using TigerRAG.Application.Users;
 
 namespace TigerRAG.Application.Auth;
 
@@ -136,17 +135,3 @@ public sealed class RoleEndpointGrantService(
         return affected;
     }
 }
-
-/// <summary>矩阵视图：按菜单分组的 endpoint 列表 + 授权状态。</summary>
-public sealed record RoleEndpointMatrix(IReadOnlyList<MenuGroup> Menus);
-
-/// <summary>单个菜单下的 endpoint 授权视图。</summary>
-public sealed record MenuGroup(string MenuKey, IReadOnlyList<EndpointGrantView> Endpoints);
-
-/// <summary>单个 endpoint 的授权视图。</summary>
-public sealed record EndpointGrantView(
-    string EndpointKey,
-    string Description,
-    string HttpMethod,
-    string Path,
-    bool Granted);

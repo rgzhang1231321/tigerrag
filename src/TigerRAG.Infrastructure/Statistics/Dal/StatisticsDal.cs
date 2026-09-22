@@ -3,6 +3,9 @@ using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
 using TigerRAG.Application.Shared;
 using TigerRAG.Application.Statistics;
+using TigerRAG.Application.Statistics.Dashboard;
+using TigerRAG.Application.Statistics.Reports;
+using TigerRAG.Application.Users;
 using TigerRAG.Domain.Documents;
 using TigerRAG.Infrastructure.Persistence;
 

@@ -12,10 +12,3 @@ public sealed class document_permission_record
     /// <summary>授权主体 Id；当 PrincipalType=Role 时存角色 Id。</summary>
     public Guid PrincipalId { get; set; }
 }
-
-/// <summary>ACL 主体类型：用户或角色。角色 ACL 会随用户角色变化而生效。</summary>
-public enum PermissionPrincipalType
-{
-    User,
-    Role
-}

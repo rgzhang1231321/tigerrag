@@ -1,4 +1,5 @@
 using TigerRAG.Application.Documents;
+using TigerRAG.Application.Documents.Indexing;
 using TigerRAG.Domain.Documents;
 
 namespace TigerRAG.UnitTests.Documents;
@@ -50,11 +51,17 @@ public sealed class DocumentIndexingServiceTests
             calls.Add("download");
             return Task.FromResult<Stream>(new MemoryStream("content"u8.ToArray()));
         }
+
+        public Task<bool> WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken)
+            => Task.FromResult(true);
+
+        public Task<bool> DeleteAsync(string path, CancellationToken cancellationToken)
+            => Task.FromResult(true);
     }
 
     private sealed class RecordingParser(List<string> calls) : IDocumentParser
     {
-        public Task<string> ParseAsync(Stream content, CancellationToken cancellationToken)
+        public Task<string> ParseAsync(Stream content, string? mimeType, CancellationToken cancellationToken)
         {
             calls.Add("parse");
             return Task.FromResult("TigerRAG content");

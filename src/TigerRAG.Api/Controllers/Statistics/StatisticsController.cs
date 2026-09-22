@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using TigerRAG.Api.Common;
 using TigerRAG.Application.Auth;
 using TigerRAG.Application.Statistics;
+using TigerRAG.Application.Statistics.Dashboard;
+using TigerRAG.Application.Statistics.Reports;
 using SysText = System.Text;
 
 namespace TigerRAG.Api.Controllers.Statistics;

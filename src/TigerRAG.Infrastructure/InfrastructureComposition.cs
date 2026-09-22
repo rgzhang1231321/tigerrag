@@ -12,9 +12,11 @@ using StackExchange.Redis;
 using TigerRAG.Application.ApiLogs;
 using TigerRAG.Application.Auth;
 using TigerRAG.Application.Documents;
+using TigerRAG.Application.Documents.Indexing;
 using TigerRAG.Application.Menus;
 using TigerRAG.Application.OperationAudit;
 using TigerRAG.Application.Roles;
+using TigerRAG.Application.Shared;
 using TigerRAG.Application.Statistics;
 using TigerRAG.Application.Users;
 using TigerRAG.Infrastructure.ApiLogs.Dal;
@@ -115,10 +117,12 @@ public static class InfrastructureComposition
                 ?? throw new InvalidOperationException("Services:Qdrant is required."))));
         // MinIO 客户端按 Endpoint Scheme 自动决定是否启用 HTTPS，便于本地 docker-compose 直连。
         services.AddSingleton<IMinioClient>(_ => CreateMinioClient(configuration));
+        services.Configure<ObjectStorageOptions>(configuration.GetSection(ObjectStorageOptions.DefaultSectionName));
         services.AddSingleton<IDocumentFileStorage, MinioFileStorage>();
         services.AddSingleton<IDocumentParser, MimeDispatchingParser>();
         services.AddSingleton<ITextChunker, FixedWindowChunker>();
         services.AddSingleton<IEmbeddingGenerator, HashEmbeddingGenerator>();
+        services.Configure<DocumentIndexQueueOptions>(configuration.GetSection(DocumentIndexQueueOptions.DefaultSectionName));
 
         return services;
     }
