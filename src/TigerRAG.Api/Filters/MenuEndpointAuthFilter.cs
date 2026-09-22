@@ -29,8 +29,10 @@ public sealed class MenuEndpointAuthFilter(
             descriptor.EndpointKey, string.Join(',', userRoles));
 
         // 直接返回 ApiResponse 外壳，避免 ApiResponseFilter 二次包装
+        // 用 Forbidden 而非 Unauthorized：40100 在前端 http.ts 里触发"token 失效"清理登录态，
+        // 把"无权限"误用 40100 会让前端立即 clear() 跳回登录页，造成登录死循环。
         context.Result = new ObjectResult(
-            ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, $"无权限访问 {descriptor.EndpointKey}"))
+            ApiResponse<object?>.Failure(FlagStatesOption.Forbidden, $"无权限访问 {descriptor.EndpointKey}"))
         {
             StatusCode = StatusCodes.Status200OK
         };
