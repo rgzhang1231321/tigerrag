@@ -32,7 +32,7 @@ describe('TigerRAG authentication shell', () => {
     await renderApp()
 
     expect(await screen.findByRole('heading', { name: 'TigerRAG' })).toBeInTheDocument()
-    expect(screen.getByText('admin')).toBeInTheDocument()
+    expect(screen.getByLabelText('admin')).toBeInTheDocument()
     expect(fetch).toHaveBeenCalledWith('/api/auth/refresh', expect.objectContaining({ credentials: 'include' }))
   })
 
@@ -81,9 +81,9 @@ describe('TigerRAG authentication shell', () => {
     })
     await renderApp()
 
-    await screen.findByText('admin')
+    await screen.findByLabelText('admin')
     await act(async () => {
-      fireEvent.click(screen.getByText('admin'))
+      fireEvent.click(screen.getByLabelText('admin'))
       await Promise.resolve()
     })
 

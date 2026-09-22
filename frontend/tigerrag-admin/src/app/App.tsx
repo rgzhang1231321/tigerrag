@@ -199,7 +199,7 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
         <nav className="top-nav">{renderTopNav(navigation)}</nav>
         <div className="account-actions">
           <Dropdown menu={{ items: userMenuItems }} trigger={['click']}>
-            <Tag className="user-tag">{userName?.charAt(0) ?? '?'}</Tag>
+            <Tag aria-label={userName} className="user-tag">{userName?.charAt(0) ?? '?'}</Tag>
           </Dropdown>
         </div>
       </Header>
