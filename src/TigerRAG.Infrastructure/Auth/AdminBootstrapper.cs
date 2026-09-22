@@ -45,7 +45,7 @@ public sealed class AdminBootstrapper(
         }
 
         // 为 Admin 角色灌全部 [MenuEndpoint] 授权：删除 MenuEndpointAuthFilter 的 Admin bypass 后，
-        // Admin 默认全通靠这一步保证。菜单分组用 "__all__" 作为兜底桶；真实授权 UI 按真实 MenuKey 分组显示。
+        // Admin 默认全通靠这一步保证。按 endpoint 真实 MenuKey 分组灌入，让授权 UI 按菜单正确展示。
         cancellationToken.ThrowIfCancellationRequested();
         var endpoints = menuEndpoints.All;
         if (endpoints.Count > 0)
@@ -55,7 +55,10 @@ public sealed class AdminBootstrapper(
             var missing = endpoints.Where(ep => !existingKeys.Contains(ep.EndpointKey)).ToList();
             if (missing.Count > 0)
             {
-                await grants.GrantAllInMenuAsync("Admin", "__all__", missing, Guid.Empty, cancellationToken);
+                foreach (var group in missing.GroupBy(ep => ep.MenuKey, StringComparer.Ordinal))
+                {
+                    await grants.GrantAllInMenuAsync("Admin", group.Key, group.ToList(), Guid.Empty, cancellationToken);
+                }
             }
         }
     }
