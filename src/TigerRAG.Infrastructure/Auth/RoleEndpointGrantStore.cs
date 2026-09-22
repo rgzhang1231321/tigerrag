@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using TigerRAG.Application.Auth;
 using TigerRAG.Infrastructure.Persistence;
 using TigerRAG.Infrastructure.Persistence.Entities.RoleEndpointGrants;
@@ -42,7 +43,7 @@ public sealed class RoleEndpointGrantStore(TigerRagDbContext dbContext) : IRoleE
             GrantedAt = DateTimeOffset.UtcNow,
             GrantedBy = actorId,
         });
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await SaveOrSwallowUniqueViolationAsync(cancellationToken);
     }
 
     public async Task RevokeAsync(string roleName, string endpointKey, CancellationToken cancellationToken)
@@ -84,8 +85,36 @@ public sealed class RoleEndpointGrantStore(TigerRagDbContext dbContext) : IRoleE
         if (toAdd.Count == 0) return 0;
 
         dbContext.RoleEndpointGrants.AddRange(toAdd);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return toAdd.Count;
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return toAdd.Count;
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            // 并发实例在我们 SELECT 后 INSERT 前先 commit 了同一组 (RoleName, EndpointKey) 行，
+            // 整批 SaveChanges 撞 PK (23505)。把未提交的待写实体清出 ChangeTracker，避免后续
+            // SELECT 看到脏状态；本次不再视为"新增"，返回 0。
+            dbContext.ChangeTracker.Clear();
+            return 0;
+        }
+    }
+
+    private static bool IsUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException is PostgresException pg && pg.SqlState == PostgresErrorCodes.UniqueViolation;
+
+    private async Task SaveOrSwallowUniqueViolationAsync(CancellationToken cancellationToken)
+    {
+        // 并发 INSERT 撞 PK (23505) 视为幂等成功：另一并发实例已写入同一 (RoleName, EndpointKey)，
+        // 本次 SELECT 时未看见的"缺失行"实际已被对方提交。清掉 ChangeTracker 防止脏状态污染后续操作。
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            dbContext.ChangeTracker.Clear();
+        }
     }
 
     public async Task<int> RevokeAllInMenuAsync(string roleName, string menuKey, CancellationToken cancellationToken)
