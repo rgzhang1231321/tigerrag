@@ -72,8 +72,8 @@ public sealed class RoleAndAclConcurrencyTests : IAsyncLifetime
             var dal2 = scope2.ServiceProvider.GetRequiredService<IUserDal>();
 
             // 互斥期望：一边要 Editor，一边要 Viewer；任何最终包含两者即为残留。
-            var task1 = Task.Run(() => dal1.AssignRolesAsync(userId, [SystemRoles.Editor], CancellationToken.None));
-            var task2 = Task.Run(() => dal2.AssignRolesAsync(userId, [SystemRoles.Viewer], CancellationToken.None));
+            var task1 = Task.Run(() => dal1.AssignRolesAsync(userId, ["Editor"], CancellationToken.None));
+            var task2 = Task.Run(() => dal2.AssignRolesAsync(userId, ["Viewer"], CancellationToken.None));
             await Task.WhenAll(task1, task2);
 
             var assigned = await ReadRoleNamesAsync(userId);
@@ -81,7 +81,7 @@ public sealed class RoleAndAclConcurrencyTests : IAsyncLifetime
                 assigned.Count == 1,
                 $"Iteration {iteration}: expected exactly one role, got [{string.Join(",", assigned)}] (union race leaked).");
             Assert.True(
-                assigned[0] == SystemRoles.Editor || assigned[0] == SystemRoles.Viewer,
+                assigned[0] == "Editor" || assigned[0] == "Viewer",
                 $"Iteration {iteration}: unexpected role [{string.Join(",", assigned)}].");
         }
     }

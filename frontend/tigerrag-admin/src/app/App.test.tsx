@@ -117,7 +117,7 @@ async function renderApp() {
 }
 
 function jsonResponse(body: unknown, ok = true, status = 200) {
-  return { ok, status, json: async () => body } as Response
+  return { ok, status, json: async () => body, text: async () => JSON.stringify(body) } as Response
 }
 
 function envelope<T>(data: T, flag = true, message = 'success') {

@@ -158,7 +158,7 @@ interface CreateUserDialogProps {
 function CreateUserDialog({ open, roles, onCancel, onCreated }: CreateUserDialogProps) {
   const [step, setStep] = useState(0)
   const [userName, setUserName] = useState('')
-  const [selectedRoles, setSelectedRoles] = useState<string[]>(['Viewer'])
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([])
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)

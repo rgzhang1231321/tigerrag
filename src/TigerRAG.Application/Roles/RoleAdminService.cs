@@ -7,11 +7,11 @@ using TigerRAG.Application.Users;
 namespace TigerRAG.Application.Roles;
 
 /// <summary>
-/// 角色管理用例：List/Create/Delete。
+/// 角色管理用例：List/Create/Delete/Rename。
 /// 删除流程把"删 AspNetRoles → 同步清理 menu_config_record.Roles → N 次 stamp 轮换 → N 次 refresh 撤销"包在同一事务内；
 /// 事务失败时对已完成 stamp 轮换的用户调用 <see cref="IUserSecurityStampRotator.InvalidateAsync"/> 清 Redis 缓存，
 /// 避免"DB 回滚后 Redis 仍是新 stamp"导致已撤销 JWT 短暂通过校验。
-/// 仅 Admin 不可删（前端 <c>permissions.ts</c> 编译期联合类型与后端 [Authorize(Roles = "Admin")] 强依赖其存在）。
+/// 所有角色（含 Admin）平等可改、可删；后端不再有"系统保留集"。
 /// </summary>
 public sealed class RoleAdminService(
     IRoleAdmin roleAdmin,
@@ -22,7 +22,7 @@ public sealed class RoleAdminService(
     IRefreshSessionDal refreshSessions,
     IOperationAuditWriter auditWriter)
 {
-    /// <summary>列出全部角色；<c>IsSystem</c> 由 <see cref="SystemRoles.Admin"/> 计算并覆写 DAL 返回值。同步注入用户引用数、菜单引用数、菜单名称列表。</summary>
+    /// <summary>列出全部角色；同步注入用户引用数、菜单引用数、菜单名称列表。</summary>
     public async Task<IReadOnlyList<RoleDto>> ListAsync(CancellationToken cancellationToken)
     {
         var items = await roleAdmin.ListAsync(cancellationToken);
@@ -39,7 +39,6 @@ public sealed class RoleAdminService(
                 .ToArray();
             enriched.Add(new RoleDto(
                 item.Name,
-                RoleDomainService.IsAdmin(item.Name),
                 userCount,
                 menuNames.Length,
                 menuNames));
@@ -47,7 +46,7 @@ public sealed class RoleAdminService(
         return enriched;
     }
 
-    /// <summary>新建角色。校验格式、不重名。仅 Admin 是受保护的系统角色，其余运行时实例都可创建。事务内完成角色创建 + role.create 审计写入。</summary>
+    /// <summary>新建角色。校验格式、不重名。所有角色平等，无保留集。</summary>
     /// <exception cref="ArgumentException">格式非法 / 已存在。</exception>
     public async Task<RoleDto> CreateRoleAsync(
         ActorContext actor,
@@ -76,13 +75,13 @@ public sealed class RoleAdminService(
                 $"{actor.Name} 创建了角色 {name}"), innerCt);
         }, cancellationToken);
 
-        return new RoleDto(name, RoleDomainService.IsAdmin(name), 0, 0, []);
+        return new RoleDto(name, 0, 0, []);
     }
 
     /// <summary>
-    /// 删除角色：Admin 受保护拒绝；存在性校验；引用数任一 > 0 拒绝；事务内级联删 menu_config_record.Roles 引用 + 删 AspNetRoles + 轮换受影响用户 stamp + 撤销 refresh + 记录 role.delete 审计。
+    /// 删除角色：所有角色平等可删；存在性校验；引用数任一 > 0 拒绝；事务内级联删 menu_config_record.Roles 引用 + 删 AspNetRoles + 轮换受影响用户 stamp + 撤销 refresh + 记录 role.delete 审计。
     /// </summary>
-    /// <exception cref="ArgumentException">Admin 受保护 / 角色名格式非法 / 仍被用户或菜单引用。</exception>
+    /// <exception cref="ArgumentException">角色名格式非法 / 仍被用户或菜单引用。</exception>
     /// <returns>true=已删除；false=角色不存在。</returns>
     public async Task<bool> DeleteAsync(
         ActorContext actor,
@@ -90,10 +89,6 @@ public sealed class RoleAdminService(
         CancellationToken cancellationToken)
     {
         RoleDomainService.EnsureName(name);
-        if (RoleDomainService.IsAdmin(name))
-        {
-            throw new ArgumentException($"系统角色 {name} 不可删除。", nameof(name));
-        }
 
         if (!await roleAdmin.NameExistsAsync(name, cancellationToken))
         {
@@ -157,11 +152,11 @@ public sealed class RoleAdminService(
     }
 
     /// <summary>
-    /// 重命名角色：Admin 不允许改名；新旧名一致幂等返回 true；新名已被占用报错。
+    /// 重命名角色：新旧名一致幂等返回 true；新名已被占用报错。
     /// 受影响用户在事务内 stamp 轮换 + refresh 撤销，确保重命名后的旧 JWT 立刻失效。
     /// 事务内同步改写 menu_config_record.Roles 引用，并记录 role.rename + menu.references.update 两条审计。
     /// </summary>
-    /// <exception cref="ArgumentException">Admin 受保护 / 角色名格式非法 / 新名已存在。</exception>
+    /// <exception cref="ArgumentException">角色名格式非法 / 新名已存在。</exception>
     /// <returns>重命名后的角色视图。</returns>
     public async Task<RoleDto> RenameAsync(
         ActorContext actor,
@@ -170,10 +165,6 @@ public sealed class RoleAdminService(
         CancellationToken cancellationToken)
     {
         RoleDomainService.EnsureName(oldName);
-        if (RoleDomainService.IsAdmin(oldName))
-        {
-            throw new ArgumentException($"系统角色 {oldName} 不可重命名。", nameof(oldName));
-        }
 
         var newName = (request.Name ?? string.Empty).Trim();
         RoleDomainService.EnsureName(newName);
@@ -242,6 +233,6 @@ public sealed class RoleAdminService(
             throw;
         }
 
-        return new RoleDto(newName, false, 0, 0, []);
+        return new RoleDto(newName, 0, 0, []);
     }
 }

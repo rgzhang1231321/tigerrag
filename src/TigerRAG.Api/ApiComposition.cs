@@ -37,7 +37,11 @@ public static class ApiComposition
         services.AddExceptionHandler<LoggingExceptionHandler>();
         services.AddHostedService<ApiLogFlusherService>();
         services
-            .AddControllers(options => options.Filters.Add<ApiResponseFilter>())
+            .AddControllers(options =>
+            {
+                options.Filters.Add<ApiResponseFilter>();
+                options.Filters.Add<MenuEndpointAuthFilter>();
+            })
             .AddJsonOptions(options =>
             {
                 options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.Never;

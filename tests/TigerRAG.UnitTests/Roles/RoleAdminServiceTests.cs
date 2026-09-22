@@ -7,11 +7,11 @@ using TigerRAG.Application.Users;
 
 namespace TigerRAG.UnitTests.Roles;
 
-/// <summary>角色管理服务单元测试：List/Create/Delete 的引用计数、Admin 保护、级联清理与事务回滚语义。</summary>
+/// <summary>角色管理服务单元测试：List/Create/Delete/Rename 的引用计数、级联清理与事务回滚语义。所有角色平等，无 Admin 保护。</summary>
 public sealed class RoleAdminServiceTests
 {
     [Fact]
-    public async Task ListAsync_MarksAdminAsSystemAndSortsAlphabetically()
+    public async Task ListAsync_SortsAlphabetically()
     {
         var roleAdmin = new RecordingRoleAdmin()
             .Seed("Viewer")
@@ -22,9 +22,9 @@ public sealed class RoleAdminServiceTests
         var result = await service.ListAsync(CancellationToken.None);
 
         Assert.Collection(result,
-            item => Assert.Equal(new RoleDto("Admin", true, 0, 0, []), item),
-            item => Assert.Equal(new RoleDto("CustomRole", false, 0, 0, []), item),
-            item => Assert.Equal(new RoleDto("Viewer", false, 0, 0, []), item));
+            item => Assert.Equal("Admin", item.Name),
+            item => Assert.Equal("CustomRole", item.Name),
+            item => Assert.Equal("Viewer", item.Name));
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public sealed class RoleAdminServiceTests
 
         var result = await service.CreateRoleAsync(AdminActor, new CreateRoleRequest("CustomRole"), CancellationToken.None);
 
-        Assert.Equal(new RoleDto("CustomRole", false, 0, 0, []), result);
+        Assert.Equal(new RoleDto("CustomRole", 0, 0, []), result);
         Assert.Equal(["CustomRole"], roleAdmin.CreatedNames);
         Assert.Single(audit.Entries);
         Assert.Equal(OperationAuditActions.RoleCreate, audit.Entries[0].Action);
@@ -112,9 +112,9 @@ public sealed class RoleAdminServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_WithAdminName_StillCreates()
+    public async Task CreateAsync_WithAdminName_CreatesSuccessfully()
     {
-        // Admin 是受保护不可删，但可重建（运行期同步）。
+        // Admin 与其他角色平等，可重建。
         var roleAdmin = new RecordingRoleAdmin();
         var audit = new RecordingAuditWriter();
         var service = BuildService(roleAdmin, audit: audit);
@@ -153,24 +153,26 @@ public sealed class RoleAdminServiceTests
     }
 
     [Fact]
-    public async Task DeleteAsync_WithAdminName_ThrowsArgumentException()
+    public async Task DeleteAsync_AnyRole_DeletesSuccessfully()
     {
+        // 所有角色（含 Admin）平等可删：只要无用户/菜单引用即可。
         var roleAdmin = new RecordingRoleAdmin().Seed("Admin");
+        var menuReference = new RecordingMenuReference();
         var audit = new RecordingAuditWriter();
-        var service = BuildService(roleAdmin, audit: audit);
+        var service = BuildService(roleAdmin, menuReference, audit: audit);
 
-        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
-            service.DeleteAsync(AdminActor, "Admin", CancellationToken.None));
+        var deleted = await service.DeleteAsync(AdminActor, "Admin", CancellationToken.None);
 
-        Assert.Contains("不可删除", error.Message);
-        Assert.False(roleAdmin.DeleteCalled);
-        Assert.Empty(audit.Entries);
+        Assert.True(deleted);
+        Assert.True(roleAdmin.DeleteCalled);
+        Assert.Single(audit.Entries);
+        Assert.Equal(OperationAuditActions.RoleDelete, audit.Entries[0].Action);
+        Assert.Equal("Admin", audit.Entries[0].TargetId);
     }
 
     [Fact]
-    public async Task DeleteAsync_NonAdminWithReservedName_DeletesSuccessfully()
+    public async Task DeleteAsync_NonAdmin_DeletesSuccessfully()
     {
-        // KbManager/Editor/Viewer/Auditor 原本是 "系统保留"，现在可被删除（业务按用户回答确定）。
         var roleAdmin = new RecordingRoleAdmin().Seed("Viewer");
         var menuReference = new RecordingMenuReference();
         var audit = new RecordingAuditWriter();
@@ -285,16 +287,17 @@ public sealed class RoleAdminServiceTests
     }
 
     [Fact]
-    public async Task RenameAsync_WithAdminName_ThrowsArgumentException()
+    public async Task RenameAsync_AnyRole_RenamesSuccessfully()
     {
+        // 所有角色（含 Admin）平等可改名。
         var roleAdmin = new RecordingRoleAdmin().Seed("Admin");
         var service = BuildService(roleAdmin);
 
-        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
-            service.RenameAsync(AdminActor, "Admin", new RenameRoleRequest("SuperAdmin"), CancellationToken.None));
+        var result = await service.RenameAsync(AdminActor, "Admin", new RenameRoleRequest("SuperAdmin"), CancellationToken.None);
 
-        Assert.Contains("不可重命名", error.Message);
-        Assert.True(await roleAdmin.NameExistsAsync("Admin", CancellationToken.None));
+        Assert.Equal("SuperAdmin", result.Name);
+        Assert.False(await roleAdmin.NameExistsAsync("Admin", CancellationToken.None));
+        Assert.True(await roleAdmin.NameExistsAsync("SuperAdmin", CancellationToken.None));
     }
 
     [Fact]
@@ -428,12 +431,9 @@ public sealed class RoleAdminServiceTests
         public List<string> CreatedNames { get; } = [];
         public bool DeleteCalled { get; private set; }
 
-        public RecordingRoleAdmin Seed(string name) =>
-            Seed(name, isSystem: false);
-
-        public RecordingRoleAdmin Seed(string name, bool isSystem)
+        public RecordingRoleAdmin Seed(string name)
         {
-            _roles[name] = new RoleRecord(name, isSystem);
+            _roles[name] = new RoleRecord(name);
             return this;
         }
 
@@ -441,7 +441,7 @@ public sealed class RoleAdminServiceTests
         {
             if (!_roles.TryGetValue(name, out var record))
             {
-                record = new RoleRecord(name, false);
+                record = new RoleRecord(name);
                 _roles[name] = record;
             }
             record.AssignmentCount = count;
@@ -453,7 +453,7 @@ public sealed class RoleAdminServiceTests
             // ListAssignedUserIdsAsync 以防御 count 与列表查询之间的并发插入 TOCTOU 窗口。
             if (!_roles.TryGetValue(name, out var record))
             {
-                record = new RoleRecord(name, false);
+                record = new RoleRecord(name);
                 _roles[name] = record;
             }
             record.AssignedUsers = userIds;
@@ -462,7 +462,7 @@ public sealed class RoleAdminServiceTests
         public Task<IReadOnlyList<RoleDto>> ListAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<RoleDto>>(
                 _roles.Values
-                    .Select(record => new RoleDto(record.Name, record.IsSystem, 0, 0, []))
+                    .Select(record => new RoleDto(record.Name, 0, 0, []))
                     .ToArray());
 
         public Task<bool> NameExistsAsync(string name, CancellationToken cancellationToken) =>
@@ -471,8 +471,8 @@ public sealed class RoleAdminServiceTests
         public Task<RoleDto> CreateRoleAsync(string name, CancellationToken cancellationToken)
         {
             CreatedNames.Add(name);
-            _roles[name] = new RoleRecord(name, false);
-            return Task.FromResult(new RoleDto(name, false, 0, 0, []));
+            _roles[name] = new RoleRecord(name);
+            return Task.FromResult(new RoleDto(name, 0, 0, []));
         }
 
         public Task<int> CountAssignmentsAsync(string name, CancellationToken cancellationToken) =>
@@ -498,7 +498,7 @@ public sealed class RoleAdminServiceTests
             }
 
             _roles.Remove(oldName);
-            _roles[newName] = new RoleRecord(newName, record.IsSystem)
+            _roles[newName] = new RoleRecord(newName)
             {
                 AssignmentCount = record.AssignmentCount,
                 AssignedUsers = record.AssignedUsers,
@@ -508,14 +508,12 @@ public sealed class RoleAdminServiceTests
 
         private sealed class RoleRecord
         {
-            public RoleRecord(string name, bool isSystem)
+            public RoleRecord(string name)
             {
                 Name = name;
-                IsSystem = isSystem;
             }
 
             public string Name { get; }
-            public bool IsSystem { get; }
             public int AssignmentCount { get; set; }
             public IReadOnlyList<Guid> AssignedUsers { get; set; } = Array.Empty<Guid>();
         }

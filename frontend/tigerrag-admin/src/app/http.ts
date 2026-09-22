@@ -1,6 +1,6 @@
 import { message } from 'antd'
 import { refreshSession } from '../features/auth/authApi'
-import { useAuthStore } from '../features/auth/authStore'
+import { useAuthStore, type AuthSession } from '../features/auth/authStore'
 
 /// <summary>业务错误：把 ApiResponse 信封 flag=false 抛成 Error；httpStatus 仅在传输层失败时填入。</summary>
 export class ApiError extends Error {
@@ -64,12 +64,9 @@ export async function http<T>(path: string, options: HttpOptions = {}): Promise<
     if (error instanceof ApiError) {
       showError(error)
       if (error.code === 40100 && retryOnAuth) {
-        // 刷新失败：仅清空 access token，保留 user 让 UI 留在原页。
-        // 下次 API 请求会读到 accessToken === null，发送时不带 Authorization 头，
-        // 后端返回 401 → execute 内部再次尝试刷新。反复失败也不会踢出登录页，
-        // 避免一次暂时性刷新失败（网络抖动等）就把用户踢回登录页。
-        // sessionStorage 缓存同时保留：若整个页面被刷新，仍可由 restoreSessionFromCache 恢复。
-        useAuthStore.getState().clearMemoryOnly()
+        // 刷新失败：清空登录态触发 App.tsx 的 if (!user) → LoginPage。
+        // 40100 是 refresh token 无效或 cookie 缺失的明确信号，无静默重试空间。
+        useAuthStore.getState().clear()
       }
     }
     throw error
@@ -143,14 +140,36 @@ async function execute<T>(
   throw new ApiError(envelope.code, envelope.message)
 }
 
+/// <summary>刷新单例：并发 refresh 复用同一 Promise，避免后端 atomic rotate 撤销旧 token 后第二次 refresh 拿旧 cookie 失败。</summary>
+let refreshInFlight: Promise<AuthSession | null> | null = null
+
+/// <summary>并发调用共享同一刷新请求；返回 null 表示刷新失败。</summary>
+export async function refreshSessionShared(): Promise<AuthSession | null> {
+  if (refreshInFlight !== null) {
+    return refreshInFlight
+  }
+
+  refreshInFlight = (async () => {
+    try {
+      return await refreshSession()
+    } catch {
+      return null
+    } finally {
+      // 完成后清空单例：下一次 401 触发新一次 refresh。
+      refreshInFlight = null
+    }
+  })()
+
+  return refreshInFlight
+}
+
 async function tryRefresh(): Promise<boolean> {
-  try {
-    const session = await refreshSession()
-    useAuthStore.getState().setSession(session)
-    return true
-  } catch {
+  const session = await refreshSessionShared()
+  if (session === null) {
     return false
   }
+  useAuthStore.getState().setSession(session)
+  return true
 }
 
 async function parseEnvelope(response: Response): Promise<ApiEnvelope<unknown>> {
@@ -177,4 +196,5 @@ async function parseEnvelope(response: Response): Promise<ApiEnvelope<unknown>> 
 export const queryKeys = {
   users: ['users'] as const,
   roles: ['roles'] as const,
+  roleEndpoints: (role: string) => ['role-endpoints', role] as const,
 }

@@ -1,20 +1,22 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Collections.Generic;
+using System.Security.Claims;
 using TigerRAG.Api.Common;
+using TigerRAG.Application.Auth;
 using TigerRAG.Application.Menus;
 using TigerRAG.Application.Shared;
 using TigerRAG.Application.Users;
 
 namespace TigerRAG.Api.Controllers.Menus;
 
+/// <summary>菜单配置端点；通过 <c>[MenuEndpoint]</c> 统一授权，Admin 由全局 filter bypass。</summary>
 [ApiController]
 [Route("api/menu-configs")]
-[Authorize]
 public sealed class MenuConfigsController(UserRoleService userRoles) : ControllerBase
 {
     /// <summary>获取前端导航用的菜单配置（全部启用项，平铺）。前端据此自行组装树形导航。</summary>
     [HttpPost("tree")]
+    [MenuEndpoint("menuConfigs", "menuConfigs.tree", "获取启用的菜单配置")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<MenuConfigItem>>>> Tree(CancellationToken cancellationToken)
     {
         var items = await userRoles.ListMenuAsync(cancellationToken);
@@ -22,18 +24,28 @@ public sealed class MenuConfigsController(UserRoleService userRoles) : Controlle
         return Ok(ApiResponse.Success(enabled));
     }
 
-    /// <summary>平铺列表供管理页使用。需要 Admin 角色。</summary>
+    /// <summary>按当前用户角色并集过滤后的可见启用菜单，供前端导航使用。</summary>
+    [HttpPost("visible-tree")]
+    [MenuEndpoint("menuConfigs", "menuConfigs.visibleTree", "获取当前用户可见的菜单")]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<MenuConfigItem>>>> VisibleTree(CancellationToken cancellationToken)
+    {
+        var roles = HttpContext.User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray();
+        var items = await userRoles.ListMenuForRolesAsync(roles, cancellationToken);
+        return Ok(ApiResponse.Success(items));
+    }
+
+    /// <summary>平铺列表供管理页使用。</summary>
     [HttpPost("list")]
-    [Authorize(Roles = "Admin")]
+    [MenuEndpoint("menuConfigs", "menuConfigs.list", "列出全部菜单配置")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<MenuConfigItem>>>> List(CancellationToken cancellationToken)
     {
         var items = await userRoles.ListMenuAsync(cancellationToken);
         return Ok(ApiResponse.Success(items));
     }
 
-    /// <summary>新建菜单配置。需要 Admin 角色。</summary>
+    /// <summary>新建菜单配置。</summary>
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [MenuEndpoint("menuConfigs", "menuConfigs.create", "新建菜单配置")]
     public async Task<ActionResult<ApiResponse<MenuConfigItem>>> Create(
         CreateMenuConfigRequest request,
         CancellationToken cancellationToken)
@@ -57,9 +69,9 @@ public sealed class MenuConfigsController(UserRoleService userRoles) : Controlle
         }
     }
 
-    /// <summary>更新菜单配置。需要 Admin 角色。</summary>
+    /// <summary>更新菜单配置。</summary>
     [HttpPost("{id:guid}")]
-    [Authorize(Roles = "Admin")]
+    [MenuEndpoint("menuConfigs", "menuConfigs.update", "更新菜单配置")]
     public async Task<ActionResult<ApiResponse<MenuConfigItem>>> Update(
         Guid id,
         UpdateMenuConfigApiRequest request,
@@ -90,9 +102,9 @@ public sealed class MenuConfigsController(UserRoleService userRoles) : Controlle
         }
     }
 
-    /// <summary>删除菜单配置及其全部后代。需要 Admin 角色。</summary>
+    /// <summary>删除菜单配置及其全部后代。</summary>
     [HttpPost("{id:guid}/delete")]
-    [Authorize(Roles = "Admin")]
+    [MenuEndpoint("menuConfigs", "menuConfigs.delete", "删除菜单配置")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var deleted = await userRoles.DeleteMenuAsync(id, cancellationToken);

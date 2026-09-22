@@ -1,14 +1,13 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using TigerRAG.Application.Roles;
-using TigerRAG.Application.Shared;
 using TigerRAG.Infrastructure.Persistence;
 
 namespace TigerRAG.Infrastructure.Roles.Dal;
 
 /// <summary>
 /// 角色管理 DAL：AspNetRoles 通过 <see cref="RoleManager{T}"/> 写入。
-/// <c>IsSystem</c> 与引用计数由 Application 层组装（依赖 <see cref="IRoleMenuReference"/> 与自身 <c>CountAssignmentsAsync</c>），DAL 仅返回原始 name 列表与基础写操作。
+/// 引用计数由 Application 层组装（依赖 <see cref="IRoleMenuReference"/> 与自身 <c>CountAssignmentsAsync</c>），DAL 仅返回原始 name 列表与基础写操作。
 /// </summary>
 public sealed class RoleAdminDal(
     RoleManager<IdentityRole<Guid>> roleManager,
@@ -21,8 +20,8 @@ public sealed class RoleAdminDal(
             .OrderBy(role => role.Name)
             .Select(role => role.Name ?? string.Empty)
             .ToListAsync(cancellationToken);
-        // DAL 一律返回 IsSystem=false / 引用计数 0 / 空菜单列表；由 Application 层通过其它端口填实。
-        return names.Select(name => new RoleDto(name, false, 0, 0, Array.Empty<string>())).ToArray();
+        // DAL 一律返回引用计数 0 / 空菜单列表；由 Application 层通过其它端口填实。
+        return names.Select(name => new RoleDto(name, 0, 0, Array.Empty<string>())).ToArray();
     }
 
     public Task<bool> NameExistsAsync(string name, CancellationToken cancellationToken)
@@ -42,7 +41,7 @@ public sealed class RoleAdminDal(
                 $"创建角色 {name} 失败：{string.Join("; ", result.Errors.Select(error => error.Description))}");
         }
 
-        return new RoleDto(name, false, 0, 0, Array.Empty<string>());
+        return new RoleDto(name, 0, 0, Array.Empty<string>());
     }
 
     public async Task<int> CountAssignmentsAsync(string name, CancellationToken cancellationToken)

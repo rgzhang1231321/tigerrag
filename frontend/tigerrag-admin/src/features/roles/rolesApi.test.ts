@@ -14,6 +14,7 @@ function jsonResponse(body: unknown) {
     ok: true,
     status: 200,
     json: async () => body,
+    text: async () => JSON.stringify(body),
   } as Response
 }
 
@@ -66,10 +67,9 @@ describe('rolesApi', () => {
 
   it('listRolesAll POSTs /api/roles/list and unwraps role list with reference counts', async () => {
     const payload = [
-      { name: 'Admin', isSystem: true, userCount: 1, menuCount: 0, menuNames: [] },
+      { name: 'Admin', userCount: 1, menuCount: 0, menuNames: [] },
       {
         name: 'Viewer',
-        isSystem: false,
         userCount: 3,
         menuCount: 2,
         menuNames: ['问答工作台', '知识库'],
@@ -85,7 +85,6 @@ describe('rolesApi', () => {
   it('createRole POSTs {name} to /api/roles', async () => {
     const created = {
       name: 'CustomRole',
-      isSystem: false,
       userCount: 0,
       menuCount: 0,
       menuNames: [],
@@ -101,7 +100,6 @@ describe('rolesApi', () => {
   it('updateRole POSTs {name} to /api/roles/{name}/rename', async () => {
     const updated = {
       name: 'RenamedRole',
-      isSystem: false,
       userCount: 1,
       menuCount: 0,
       menuNames: [],
@@ -118,7 +116,6 @@ describe('rolesApi', () => {
     const calls = setupFetchMock(() =>
       envelope({
         name: 'NewRole',
-        isSystem: false,
         userCount: 0,
         menuCount: 0,
         menuNames: [],
@@ -138,8 +135,8 @@ describe('rolesApi', () => {
   })
 
   it('createRole propagates server validation message via ApiError', async () => {
-    setupFetchMock(() => envelope(null, false, '系统角色 Admin 已存在，不可重建。'))
-    await expect(createRole({ name: 'Admin' })).rejects.toThrow('系统角色 Admin 已存在')
+    setupFetchMock(() => envelope(null, false, '角色 Admin 已存在。'))
+    await expect(createRole({ name: 'Admin' })).rejects.toThrow('角色 Admin 已存在')
   })
 
   it('deleteRole propagates not-found message via ApiError', async () => {

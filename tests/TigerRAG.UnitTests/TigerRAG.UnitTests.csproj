@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\TigerRAG.Domain\TigerRAG.Domain.csproj" />
     <ProjectReference Include="..\..\src\TigerRAG.Application\TigerRAG.Application.csproj" />
     <ProjectReference Include="..\..\src\TigerRAG.Worker\TigerRAG.Worker.csproj" />
+    <ProjectReference Include="..\..\src\TigerRAG.Infrastructure\TigerRAG.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

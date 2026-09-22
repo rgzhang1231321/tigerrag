@@ -75,7 +75,7 @@ public sealed class SecureCookieTests
                 // 用最小 stub 让登录通过；不依赖任何外部 SDK（Postgres/Redis/Qdrant/MinIO）。
                 services.RemoveAll<IUserDal>();
                 services.AddSingleton<IUserDal>(new StubUserDal(
-                    new UserAccount(Guid.NewGuid(), "editor", [SystemRoles.Editor]) { SecurityStamp = "test-stamp" },
+                    new UserAccount(Guid.NewGuid(), "editor", ["Editor"]) { SecurityStamp = "test-stamp" },
                     salt: "test-salt"));
                 services.RemoveAll<IUserCredentialDal>();
                 services.AddSingleton<IUserCredentialDal>(new StubCredentialDal());

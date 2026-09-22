@@ -111,7 +111,7 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
     [Fact]
     public async Task Login_WithValidCredentials_ReturnsBearerTokenAndUser()
     {
-        var user = new UserAccount(Guid.NewGuid(), "editor", [SystemRoles.Editor]) { SecurityStamp = "test-stamp" };
+        var user = new UserAccount(Guid.NewGuid(), "editor", ["Editor"]) { SecurityStamp = "test-stamp" };
         using var factory = CreateSecurityFactory(new StubUserDal(user));
         using var client = factory.CreateClient();
 
@@ -136,7 +136,7 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
     [Fact]
     public async Task Refresh_WithValidCookie_RotatesSessionAndReturnsAccessToken()
     {
-        var user = new UserAccount(Guid.NewGuid(), "viewer", [SystemRoles.Viewer]) { SecurityStamp = "test-stamp" };
+        var user = new UserAccount(Guid.NewGuid(), "viewer", ["Viewer"]) { SecurityStamp = "test-stamp" };
         var sessions = new StubRefreshSessionDal { RotatedUser = user };
         using var factory = CreateSecurityFactory(new StubUserDal(null), refreshSessions: sessions);
         using var client = factory.CreateClient();
@@ -169,9 +169,10 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
     [Fact]
     public async Task ChangePassword_WithValidCurrentPassword_ReturnsNoContent()
     {
-        var user = new UserAccount(Guid.NewGuid(), "viewer", [SystemRoles.Viewer]) { SecurityStamp = "test-stamp" };
+        var user = new UserAccount(Guid.NewGuid(), "viewer", ["Viewer"]) { SecurityStamp = "test-stamp" };
         var credentials = new StubUserCredentialDal { ChangePasswordResult = true };
-        using var factory = CreateSecurityFactory(new StubUserDal(user), credentials: credentials);
+        var grantStore = new StubGrantStore(("auth", "auth.changePassword"));
+        using var factory = CreateSecurityFactory(new StubUserDal(user), credentials: credentials, grantStore: grantStore);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await LoginAsync(client, user.UserName));
 
@@ -223,8 +224,9 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
     [Fact]
     public async Task CurrentUser_ForViewer_ReturnsClaimsProfile()
     {
-        var user = new UserAccount(Guid.NewGuid(), "viewer", [SystemRoles.Viewer]) { SecurityStamp = "test-stamp" };
-        using var factory = CreateSecurityFactory(new StubUserDal(user));
+        var user = new UserAccount(Guid.NewGuid(), "viewer", ["Viewer"]) { SecurityStamp = "test-stamp" };
+        var grantStore = new StubGrantStore(("users", "users.me"));
+        using var factory = CreateSecurityFactory(new StubUserDal(user), grantStore: grantStore);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await LoginAsync(client, user.UserName));
 
@@ -234,13 +236,13 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var data = body.RootElement.GetProperty("data");
         Assert.Equal(user.Id, data.GetProperty("id").GetGuid());
-        Assert.Equal(SystemRoles.Viewer, data.GetProperty("roles")[0].GetString());
+        Assert.Equal("Viewer", data.GetProperty("roles")[0].GetString());
     }
 
     [Fact]
     public async Task UserManagement_RequiresManageUsersPermission()
     {
-        var viewer = new UserAccount(Guid.NewGuid(), "viewer", [SystemRoles.Viewer]) { SecurityStamp = "test-stamp" };
+        var viewer = new UserAccount(Guid.NewGuid(), "viewer", ["Viewer"]) { SecurityStamp = "test-stamp" };
         using var factory = CreateSecurityFactory(new StubUserDal(viewer));
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await LoginAsync(client, viewer.UserName));
@@ -253,28 +255,30 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
     [Fact]
     public async Task UserManagement_ForAdmin_ListsUsersAndAssignsFixedRoles()
     {
-        var admin = new UserAccount(Guid.NewGuid(), "admin", [SystemRoles.Admin]) { SecurityStamp = "test-stamp" };
+        var admin = new UserAccount(Guid.NewGuid(), "admin", ["Admin"]) { SecurityStamp = "test-stamp" };
         var dal = new StubUserDal(admin);
-        using var factory = CreateSecurityFactory(dal);
+        var grantStore = new StubGrantStore(("users", "users.list"), ("users", "users.assignRoles"));
+        using var factory = CreateSecurityFactory(dal, grantStore: grantStore);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await LoginAsync(client, admin.UserName));
 
         var listResponse = await client.PostAsync("/api/users/list", JsonContent.Create(new { }));
         var assignResponse = await client.PostAsJsonAsync($"/api/users/{admin.Id}/roles", new
         {
-            roles = new[] { SystemRoles.Editor, SystemRoles.Viewer, SystemRoles.Viewer }
+            roles = new[] { "Editor", "Viewer", "Viewer" }
         });
 
         Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, assignResponse.StatusCode);
-        Assert.Equal([SystemRoles.Editor, SystemRoles.Viewer], dal.AssignedRoles);
+        Assert.Equal(["Editor", "Viewer"], dal.AssignedRoles);
     }
 
     [Fact]
     public async Task UserManagement_ForAdmin_ReturnsFixedSystemRoles()
     {
-        var admin = new UserAccount(Guid.NewGuid(), "admin", [SystemRoles.Admin]) { SecurityStamp = "test-stamp" };
-        using var factory = CreateSecurityFactory(new StubUserDal(admin));
+        var admin = new UserAccount(Guid.NewGuid(), "admin", ["Admin"]) { SecurityStamp = "test-stamp" };
+        var grantStore = new StubGrantStore(("users", "users.roles.list"));
+        using var factory = CreateSecurityFactory(new StubUserDal(admin), grantStore: grantStore);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await LoginAsync(client, admin.UserName));
 
@@ -282,27 +286,28 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var envelope = await response.Content.ReadFromJsonAsync<ApiEnvelope<string[]>>();
-        Assert.Equal(SystemRoles.All.OrderBy(role => role, StringComparer.Ordinal), envelope?.Data);
+        Assert.Equal(new[] { "Admin", "Auditor", "Editor", "KbManager", "Viewer" }, envelope?.Data);
     }
 
     [Fact]
     public async Task UserManagement_ForAdmin_CreatesUserThenSetsInitialPassword()
     {
-        var admin = new UserAccount(Guid.NewGuid(), "admin", [SystemRoles.Admin]) { SecurityStamp = "test-stamp" };
+        var admin = new UserAccount(Guid.NewGuid(), "admin", ["Admin"]) { SecurityStamp = "test-stamp" };
         var credentials = new StubUserCredentialDal();
-        using var factory = CreateSecurityFactory(new StubUserDal(admin), credentials: credentials);
+        var grantStore = new StubGrantStore(("users", "users.create"), ("users", "users.initialPassword"));
+        using var factory = CreateSecurityFactory(new StubUserDal(admin), credentials: credentials, grantStore: grantStore);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await LoginAsync(client, admin.UserName));
 
         var createResponse = await client.PostAsJsonAsync("/api/users", new
         {
             userName = "new-editor",
-            roles = new[] { SystemRoles.Editor }
+            roles = new[] { "Editor" }
         });
 
         Assert.Equal(HttpStatusCode.OK, createResponse.StatusCode);
         Assert.Equal("new-editor", credentials.CreatedUserName);
-        Assert.Equal([SystemRoles.Editor], credentials.CreatedRoles);
+        Assert.Equal(["Editor"], credentials.CreatedRoles);
         Assert.NotNull(credentials.LastCreatedUserId);
 
         var setPasswordResponse = await client.PostAsJsonAsync(
@@ -317,9 +322,10 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
     [Fact]
     public async Task UserManagement_ForAdmin_ResetsPassword()
     {
-        var admin = new UserAccount(Guid.NewGuid(), "admin", [SystemRoles.Admin]) { SecurityStamp = "test-stamp" };
+        var admin = new UserAccount(Guid.NewGuid(), "admin", ["Admin"]) { SecurityStamp = "test-stamp" };
         var credentials = new StubUserCredentialDal();
-        using var factory = CreateSecurityFactory(new StubUserDal(admin), credentials: credentials);
+        var grantStore = new StubGrantStore(("users", "users.resetPassword"));
+        using var factory = CreateSecurityFactory(new StubUserDal(admin), credentials: credentials, grantStore: grantStore);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await LoginAsync(client, admin.UserName));
         var targetUserId = Guid.NewGuid();
@@ -336,8 +342,9 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
     [Fact]
     public async Task AssignRoles_WithUnknownRole_ReturnsBadRequestProblemDetails()
     {
-        var admin = new UserAccount(Guid.NewGuid(), "admin", [SystemRoles.Admin]) { SecurityStamp = "test-stamp" };
-        using var factory = CreateSecurityFactory(new StubUserDal(admin));
+        var admin = new UserAccount(Guid.NewGuid(), "admin", ["Admin"]) { SecurityStamp = "test-stamp" };
+        var grantStore = new StubGrantStore(("users", "users.assignRoles"));
+        using var factory = CreateSecurityFactory(new StubUserDal(admin), grantStore: grantStore);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await LoginAsync(client, admin.UserName));
 
@@ -353,14 +360,15 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
     [Fact]
     public async Task AssignRoles_ForMissingUser_ReturnsNotFoundProblemDetails()
     {
-        var admin = new UserAccount(Guid.NewGuid(), "admin", [SystemRoles.Admin]) { SecurityStamp = "test-stamp" };
-        using var factory = CreateSecurityFactory(new MissingUserDal(admin));
+        var admin = new UserAccount(Guid.NewGuid(), "admin", ["Admin"]) { SecurityStamp = "test-stamp" };
+        var grantStore = new StubGrantStore(("users", "users.assignRoles"));
+        using var factory = CreateSecurityFactory(new MissingUserDal(admin), grantStore: grantStore);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await LoginAsync(client, admin.UserName));
 
         var response = await client.PostAsJsonAsync($"/api/users/{Guid.NewGuid()}/roles", new
         {
-            roles = new[] { SystemRoles.Viewer }
+            roles = new[] { "Viewer" }
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -370,9 +378,10 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
     [Fact]
     public async Task DocumentPermissions_ForAdmin_ReplacesUserAndRoleAcl()
     {
-        var admin = new UserAccount(Guid.NewGuid(), "admin", [SystemRoles.Admin]) { SecurityStamp = "test-stamp" };
+        var admin = new UserAccount(Guid.NewGuid(), "admin", ["Admin"]) { SecurityStamp = "test-stamp" };
         var accessDal = new StubDocumentAccessDal();
-        using var factory = CreateSecurityFactory(new StubUserDal(admin), accessDal);
+        var grantStore = new StubGrantStore(("documents", "documents.permissions.replace"));
+        using var factory = CreateSecurityFactory(new StubUserDal(admin), accessDal, grantStore: grantStore);
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await LoginAsync(client, admin.UserName));
         var documentId = Guid.NewGuid();
@@ -381,45 +390,54 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
         var response = await client.PostAsJsonAsync($"/api/documents/{documentId}/permissions", new
         {
             userIds = new[] { userId, userId },
-            roles = new[] { SystemRoles.Viewer, SystemRoles.Editor, SystemRoles.Viewer }
+            roles = new[] { "Viewer", "Editor", "Viewer" }
         });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(documentId, accessDal.DocumentId);
         Assert.Equal([userId], accessDal.UserIds);
-        Assert.Equal([SystemRoles.Editor, SystemRoles.Viewer], accessDal.Roles);
+        Assert.Equal(["Editor", "Viewer"], accessDal.Roles);
     }
 
     [Theory]
-    [InlineData("KnowledgeBases", "Admin,KbManager")]
-    [InlineData("Documents", "Admin,KbManager,Editor")]
-    [InlineData("Conversations", "Admin,KbManager,Editor,Viewer")]
-    [InlineData("AuditLogs", "Admin,Auditor")]
-    public void BusinessControllers_UseRoleAuthorization(string controllerName, string expectedRoles)
+    [InlineData("ApiLogs", "apiLogs")]
+    [InlineData("MenuConfigs", "menuConfigs")]
+    [InlineData("Users", "users")]
+    [InlineData("Roles", "roles")]
+    [InlineData("RoleEndpointGrants", "roles")]
+    [InlineData("Reports", "reports")]
+    [InlineData("Statistics", "statistics")]
+    [InlineData("KnowledgeBases", "knowledgeBases")]
+    [InlineData("Documents", "documents")]
+    [InlineData("Conversations", "conversations")]
+    [InlineData("AuditLogs", "auditLogs")]
+    public void BusinessControllers_UseMenuEndpointAuthorization(string controllerName, string expectedMenuKey)
     {
-        var action = _factory.Services
+        var actions = _factory.Services
             .GetRequiredService<IActionDescriptorCollectionProvider>()
             .ActionDescriptors.Items
             .OfType<ControllerActionDescriptor>()
-            .First(descriptor => descriptor.ControllerName == controllerName);
+            .Where(descriptor => descriptor.ControllerName == controllerName);
 
-        var roles = action.EndpointMetadata
-            .OfType<IAuthorizeData>()
-            .Select(metadata => metadata.Roles)
-            .Single();
-
-        Assert.Equal(expectedRoles, roles);
+        Assert.NotEmpty(actions);
+        foreach (var action in actions)
+        {
+            var menuEndpoint = action.EndpointMetadata
+                .OfType<MenuEndpointAttribute>()
+                .Single();
+            Assert.Equal(expectedMenuKey, menuEndpoint.MenuKey);
+            Assert.False(string.IsNullOrWhiteSpace(menuEndpoint.Description));
+        }
     }
 
     [Fact]
-    public void ChatHub_UsesRoleAuthorization()
+    public void ChatHub_NoLongerUsesClassLevelAuthorize()
     {
-        var authorization = Assert.Single(
-            typeof(ChatHub).GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true)
-                .Cast<AuthorizeAttribute>());
-
-        Assert.Equal("Admin,KbManager,Editor,Viewer", authorization.Roles);
-        Assert.Null(authorization.Policy);
+        var authorizeAttributes = typeof(ChatHub)
+            .GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true)
+            .Cast<AuthorizeAttribute>()
+            .ToList();
+        Assert.Empty(authorizeAttributes);
     }
 
     private static WebApplicationFactory<Program> CreateSecurityFactory(
@@ -427,7 +445,8 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
         IDocumentAccessDal? documentAccess = null,
         IUserCredentialDal? credentials = null,
         IRefreshSessionDal? refreshSessions = null,
-        IOperationAuditWriter? auditWriter = null) =>
+        IOperationAuditWriter? auditWriter = null,
+        IRoleEndpointGrantStore? grantStore = null) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("Jwt:Issuer", "TigerRAG.Tests");
@@ -446,6 +465,11 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
                 services.AddSingleton(refreshSessions ?? new StubRefreshSessionDal());
                 services.RemoveAll<IOperationAuditWriter>();
                 services.AddSingleton(auditWriter ?? new StubOperationAuditWriter());
+                if (grantStore is not null)
+                {
+                    services.RemoveAll<IRoleEndpointGrantStore>();
+                    services.AddSingleton(grantStore);
+                }
                 if (documentAccess is not null)
                 {
                     services.RemoveAll<IDocumentAccessDal>();
@@ -522,6 +546,32 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
             IReadOnlyCollection<string> roles,
             CancellationToken cancellationToken) =>
             throw new KeyNotFoundException();
+    }
+
+    /// <summary>授权 store stub：构造时传入 (menuKey, endpointKey) 元组列表，按 endpointKey 一律返回已授权；写操作无副作用。</summary>
+    private sealed class StubGrantStore(params (string MenuKey, string EndpointKey)[] grants) : IRoleEndpointGrantStore
+    {
+        public Task<IReadOnlyList<RoleEndpointGrant>> ListByRoleAsync(string roleName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<RoleEndpointGrant>>(
+                grants.Select(g => new RoleEndpointGrant(roleName, g.MenuKey, g.EndpointKey, DateTimeOffset.UnixEpoch, Guid.Empty)).ToArray());
+
+        public Task<bool> HasGrantAsync(IEnumerable<string> userRoles, string endpointKey, CancellationToken cancellationToken) =>
+            Task.FromResult(grants.Any(g => string.Equals(g.EndpointKey, endpointKey, StringComparison.Ordinal)));
+
+        public Task GrantAsync(string roleName, string menuKey, string endpointKey, Guid actorId, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task RevokeAsync(string roleName, string endpointKey, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task<int> GrantAllInMenuAsync(string roleName, string menuKey, IReadOnlyCollection<MenuEndpointDescriptor> endpoints, Guid actorId, CancellationToken cancellationToken) =>
+            Task.FromResult(0);
+
+        public Task<int> RevokeAllInMenuAsync(string roleName, string menuKey, CancellationToken cancellationToken) =>
+            Task.FromResult(0);
+
+        public Task<int> ApplyBatchAsync(string roleName, IReadOnlyCollection<BatchEndpointChange> desiredEndpoints, Guid actorId, CancellationToken cancellationToken) =>
+            Task.FromResult(0);
     }
 
     private sealed class StubDocumentAccessDal : IDocumentAccessDal

@@ -16,6 +16,11 @@ export async function fetchMenuTree(): Promise<MenuConfigDto[]> {
   return http<MenuConfigDto[]>('/api/menu-configs/tree', { method: 'POST' })
 }
 
+/// <summary>按当前用户角色并集过滤后的可见菜单（导航用）。</summary>
+export async function fetchVisibleMenuTree(): Promise<MenuConfigDto[]> {
+  return http<MenuConfigDto[]>('/api/menu-configs/visible-tree', { method: 'POST' })
+}
+
 /// <summary>取菜单平铺列表（管理页用）。</summary>
 export async function listMenuConfigs(): Promise<MenuConfigDto[]> {
   return http<MenuConfigDto[]>('/api/menu-configs/list', { method: 'POST' })

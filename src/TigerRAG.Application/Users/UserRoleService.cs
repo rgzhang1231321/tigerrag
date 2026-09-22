@@ -9,7 +9,8 @@ namespace TigerRAG.Application.Users;
 /// 用户与角色管理服务。创建用户拆为两步（先建账号拿到 salt，再设密码）。
 /// 敏感动作（角色分配、改密、锁定、删除）配套调 <see cref="IUserSecurityStampRotator"/>
 /// 与 <see cref="IRefreshSessionDal.RevokeAllAsync"/>，保证旧 JWT 与旧刷新会话同时失效。
-/// 角色名校验同时覆盖系统保留名与 IRoleAdmin 中已存在的自定义角色；保留集由 SystemRoles.All 提供。
+/// 角色名校验仅依赖 PascalCase 正则与 DB 存在性；无保留集。
+/// 自我降级保护：Admin 用户如试图移除自身 Admin 角色，必须存在另一名 Admin 持有者；由 <see cref="IRoleRegistry.CountHoldersAsync"/> 校验。
 /// </summary>
 public sealed class UserRoleService(
     IUserDal users,
@@ -18,7 +19,8 @@ public sealed class UserRoleService(
     IMenuConfigDal menuConfigs,
     IUserSecurityStampRotator stampRotator,
     IUnitOfWork unitOfWork,
-    IRoleAdmin roleAdmin)
+    IRoleAdmin roleAdmin,
+    IRoleRegistry roleRegistry)
 {
     /// <summary>列出全部用户及其角色（仅 Admin 角色可通过 Controller 到达）。</summary>
     public Task<IReadOnlyList<UserListItem>> ListAsync(CancellationToken cancellationToken) =>
@@ -30,16 +32,19 @@ public sealed class UserRoleService(
     /// 三步在同一事务内：任一失败整体回滚，避免角色已换而 stamp 未轮换的不一致。
     /// </summary>
     public async Task AssignRolesAsync(
-        Guid userId,
+        Guid actorUserId,
+        Guid targetUserId,
         IReadOnlyCollection<string> roles,
         CancellationToken cancellationToken)
     {
         var normalized = await NormalizeRolesAsync(roles, cancellationToken);
+        await EnsureCanDemoteAdminAsync(actorUserId, targetUserId, normalized, cancellationToken);
+
         await unitOfWork.ExecuteAsync(async ct =>
         {
-            await users.AssignRolesAsync(userId, normalized, ct);
-            await stampRotator.RotateAsync(userId, ct);
-            await refreshSessions.RevokeAllAsync(userId, ct);
+            await users.AssignRolesAsync(targetUserId, normalized, ct);
+            await stampRotator.RotateAsync(targetUserId, ct);
+            await refreshSessions.RevokeAllAsync(targetUserId, ct);
         }, cancellationToken);
     }
 
@@ -133,6 +138,19 @@ public sealed class UserRoleService(
     public Task<IReadOnlyList<MenuConfigItem>> ListMenuAsync(CancellationToken cancellationToken) =>
         menuConfigs.ListAsync(cancellationToken);
 
+    /// <summary>按角色并集过滤当前用户可见的启用菜单；Roles 为空表示对所有人可见。Admin bypass 由具体菜单的 Roles 列是否含 Admin 决定，不在此处硬编码。</summary>
+    public async Task<IReadOnlyList<MenuConfigItem>> ListMenuForRolesAsync(
+        IReadOnlyCollection<string> roles,
+        CancellationToken cancellationToken)
+    {
+        var items = await menuConfigs.ListAsync(cancellationToken);
+        var roleSet = roles as IReadOnlySet<string> ?? roles.ToHashSet(StringComparer.Ordinal);
+        return items
+            .Where(item => item.IsEnabled)
+            .Where(item => item.Roles.Length == 0 || item.Roles.Any(roleSet.Contains))
+            .ToArray();
+    }
+
     /// <summary>新建菜单配置。校验父节点存在性与可见角色名单。</summary>
     /// <exception cref="ArgumentException">业务规则违反。</exception>
     public async Task<MenuConfigItem> CreateMenuAsync(
@@ -190,18 +208,32 @@ public sealed class UserRoleService(
         return count > 0;
     }
 
-    // 校验角色存在性（系统保留集 ∪ DB 中已存在的自定义角色）+ 去重 + 排序。
-    // 系统保留名无需走 DB：始终合法（SeedRoles 兜底）；自定义角色由 IRoleAdmin 实时校验。
+    // 自我降级保护：操作者尝试把自己持有的 Admin 角色移除时，必须有另一名 Admin 持有者兜底；否则拒绝。
+    // 仅当目标用户即操作者本人、新角色集合不再包含 Admin 且操作者原本持有 Admin 时触发。
+    private async Task EnsureCanDemoteAdminAsync(
+        Guid actorUserId,
+        Guid targetUserId,
+        IReadOnlyCollection<string> newRoles,
+        CancellationToken cancellationToken)
+    {
+        if (actorUserId != targetUserId) return;
+        if (newRoles.Contains("Admin", StringComparer.Ordinal)) return;
+        if (!await roleRegistry.UserHasRoleAsync(actorUserId, "Admin", cancellationToken)) return;
+
+        var holders = await roleRegistry.CountHoldersAsync("Admin", cancellationToken);
+        if (holders <= 1)
+        {
+            throw new ArgumentException("系统必须保留至少一名 Admin 持有者。", nameof(newRoles));
+        }
+    }
+
+    // 校验角色存在性（DB 中已存在的角色）+ 去重 + 排序。无保留集，所有合法角色名都走 DB 校验。
     private async Task<string[]> NormalizeRolesAsync(
         IReadOnlyCollection<string> roles,
         CancellationToken cancellationToken)
     {
         foreach (var role in roles)
         {
-            if (RoleDomainService.IsReserved(role))
-            {
-                continue;
-            }
             if (!await roleAdmin.NameExistsAsync(role, cancellationToken))
             {
                 throw new ArgumentException($"未知角色：{role}", nameof(roles));

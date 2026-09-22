@@ -1,6 +1,5 @@
 using TigerRAG.Application.Auth;
 using TigerRAG.Application.Menus;
-using TigerRAG.Application.OperationAudit;
 using TigerRAG.Application.Roles;
 using TigerRAG.Application.Shared;
 using TigerRAG.Application.Users;
@@ -18,7 +17,7 @@ public sealed class UserRoleServiceTests
         var service = CreateService(dal);
 
         var error = await Assert.ThrowsAsync<ArgumentException>(() =>
-            service.AssignRolesAsync(Guid.NewGuid(), ["SuperUser"], CancellationToken.None));
+            service.AssignRolesAsync(Guid.NewGuid(), Guid.NewGuid(), ["SuperUser"], CancellationToken.None));
 
         Assert.Contains("SuperUser", error.Message);
         Assert.Null(dal.AssignedRoles);
@@ -29,13 +28,15 @@ public sealed class UserRoleServiceTests
     {
         var dal = new RecordingUserDal();
         var service = CreateService(dal);
+        var userId = Guid.NewGuid();
 
         await service.AssignRolesAsync(
-            Guid.NewGuid(),
-            [SystemRoles.Viewer, SystemRoles.Viewer, SystemRoles.Editor],
+            userId,
+            userId,
+            ["Viewer", "Viewer", "Editor"],
             CancellationToken.None);
 
-        Assert.Equal([SystemRoles.Editor, SystemRoles.Viewer], dal.AssignedRoles);
+        Assert.Equal(["Editor", "Viewer"], dal.AssignedRoles);
     }
 
     [Fact]
@@ -49,15 +50,16 @@ public sealed class UserRoleServiceTests
             MenuConfigs,
             new RecordingStampRotator(),
             new RecordingUnitOfWork(),
-            new RecordingRoleAdmin());
+            new RecordingRoleAdmin().Seed("Viewer").Seed("Editor"),
+            new RecordingRoleRegistry().Seed("Viewer").Seed("Editor"));
 
         var user = await service.CreateAsync(
             "new-user",
-            [SystemRoles.Viewer, SystemRoles.Editor, SystemRoles.Viewer],
+            ["Viewer", "Editor", "Viewer"],
             CancellationToken.None);
 
         Assert.Equal("new-user", user.UserName);
-        Assert.Equal([SystemRoles.Editor, SystemRoles.Viewer], credentials.CreatedRoles);
+        Assert.Equal(["Editor", "Viewer"], credentials.CreatedRoles);
     }
 
     [Fact]
@@ -73,7 +75,8 @@ public sealed class UserRoleServiceTests
             MenuConfigs,
             rotator,
             new RecordingUnitOfWork(),
-            new RecordingRoleAdmin());
+            new RecordingRoleAdmin(),
+            new RecordingRoleRegistry());
         var userId = Guid.NewGuid();
 
         await service.SetInitialPasswordAsync(userId, "client-md5-hash", CancellationToken.None);
@@ -97,7 +100,8 @@ public sealed class UserRoleServiceTests
             MenuConfigs,
             rotator,
             new RecordingUnitOfWork(),
-            new RecordingRoleAdmin());
+            new RecordingRoleAdmin(),
+            new RecordingRoleRegistry());
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             service.SetInitialPasswordAsync(Guid.NewGuid(), "client-md5-hash", CancellationToken.None));
@@ -113,7 +117,7 @@ public sealed class UserRoleServiceTests
         var sessions = new RecordingRefreshSessionDal();
         var rotator = new RecordingStampRotator();
         var service = new UserRoleService(
-            new RecordingUserDal(), credentials, sessions, MenuConfigs, rotator, new RecordingUnitOfWork(), new RecordingRoleAdmin());
+            new RecordingUserDal(), credentials, sessions, MenuConfigs, rotator, new RecordingUnitOfWork(), new RecordingRoleAdmin(), new RecordingRoleRegistry());
         var userId = Guid.NewGuid();
 
         await service.ResetPasswordAsync(userId, "client-md5-hash", CancellationToken.None);
@@ -130,7 +134,7 @@ public sealed class UserRoleServiceTests
         var sessions = new RecordingRefreshSessionDal();
         var rotator = new RecordingStampRotator();
         var service = new UserRoleService(
-            new RecordingUserDal(), credentials, sessions, MenuConfigs, rotator, new RecordingUnitOfWork(), new RecordingRoleAdmin());
+            new RecordingUserDal(), credentials, sessions, MenuConfigs, rotator, new RecordingUnitOfWork(), new RecordingRoleAdmin(), new RecordingRoleRegistry());
         var userId = Guid.NewGuid();
 
         var deleted = await service.DeleteAsync(userId, CancellationToken.None);
@@ -149,7 +153,7 @@ public sealed class UserRoleServiceTests
         var sessions = new RecordingRefreshSessionDal();
         var rotator = new RecordingStampRotator();
         var service = new UserRoleService(
-            new RecordingUserDal(), credentials, sessions, MenuConfigs, rotator, new RecordingUnitOfWork(), new RecordingRoleAdmin());
+            new RecordingUserDal(), credentials, sessions, MenuConfigs, rotator, new RecordingUnitOfWork(), new RecordingRoleAdmin(), new RecordingRoleRegistry());
         var userId = Guid.NewGuid();
         var lockoutEnd = DateTimeOffset.UtcNow.AddYears(100);
 
@@ -168,7 +172,7 @@ public sealed class UserRoleServiceTests
         var sessions = new RecordingRefreshSessionDal();
         var rotator = new RecordingStampRotator();
         var service = new UserRoleService(
-            new RecordingUserDal(), credentials, sessions, MenuConfigs, rotator, new RecordingUnitOfWork(), new RecordingRoleAdmin());
+            new RecordingUserDal(), credentials, sessions, MenuConfigs, rotator, new RecordingUnitOfWork(), new RecordingRoleAdmin(), new RecordingRoleRegistry());
 
         await service.SetLockoutAsync(Guid.NewGuid(), null, CancellationToken.None);
 
@@ -188,10 +192,11 @@ public sealed class UserRoleServiceTests
             MenuConfigs,
             rotator,
             new RecordingUnitOfWork(),
-            new RecordingRoleAdmin());
+            new RecordingRoleAdmin().Seed("Viewer"),
+            new RecordingRoleRegistry().Seed("Viewer"));
         var userId = Guid.NewGuid();
 
-        await service.AssignRolesAsync(userId, [SystemRoles.Viewer], CancellationToken.None);
+        await service.AssignRolesAsync(userId, userId, ["Viewer"], CancellationToken.None);
 
         // 角色变更需要让旧 JWT 立刻失效：stamp 轮换 + refresh 全量撤销。
         Assert.Equal(userId, rotator.RotatedUserId);
@@ -206,7 +211,7 @@ public sealed class UserRoleServiceTests
         var rotator = new ThrowingStampRotator();
         var uow = new RecordingUnitOfWork();
         var service = new UserRoleService(
-            new RecordingUserDal(), credentials, sessions, MenuConfigs, rotator, uow, new RecordingRoleAdmin());
+            new RecordingUserDal(), credentials, sessions, MenuConfigs, rotator, uow, new RecordingRoleAdmin(), new RecordingRoleRegistry());
         var userId = Guid.NewGuid();
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
@@ -222,8 +227,9 @@ public sealed class UserRoleServiceTests
     [Fact]
     public async Task AssignRolesAsync_WithCustomRoleInDb_AcceptsRole()
     {
-        // 自定义角色（不在 SystemRoles.All 中）只要在 DB 存在即可分配。
+        // 自定义角色只要在 DB 存在即可分配。
         var roleAdmin = new RecordingRoleAdmin().Seed("CustomRole");
+        var registry = new RecordingRoleRegistry().Seed("CustomRole");
         var dal = new RecordingUserDal();
         var service = new UserRoleService(
             dal,
@@ -232,9 +238,10 @@ public sealed class UserRoleServiceTests
             MenuConfigs,
             new RecordingStampRotator(),
             new RecordingUnitOfWork(),
-            roleAdmin);
+            roleAdmin,
+            registry);
 
-        await service.AssignRolesAsync(Guid.NewGuid(), ["CustomRole"], CancellationToken.None);
+        await service.AssignRolesAsync(Guid.NewGuid(), Guid.NewGuid(), ["CustomRole"], CancellationToken.None);
 
         Assert.Equal(["CustomRole"], dal.AssignedRoles);
     }
@@ -243,6 +250,7 @@ public sealed class UserRoleServiceTests
     public async Task AssignRolesAsync_WithCustomRoleNotInDb_RejectsRequest()
     {
         var roleAdmin = new RecordingRoleAdmin(); // 空 stub，未 seed 任何角色
+        var registry = new RecordingRoleRegistry();
         var dal = new RecordingUserDal();
         var service = new UserRoleService(
             dal,
@@ -251,12 +259,90 @@ public sealed class UserRoleServiceTests
             MenuConfigs,
             new RecordingStampRotator(),
             new RecordingUnitOfWork(),
-            roleAdmin);
+            roleAdmin,
+            registry);
 
         var error = await Assert.ThrowsAsync<ArgumentException>(() =>
-            service.AssignRolesAsync(Guid.NewGuid(), ["GhostRole"], CancellationToken.None));
+            service.AssignRolesAsync(Guid.NewGuid(), Guid.NewGuid(), ["GhostRole"], CancellationToken.None));
 
         Assert.Contains("GhostRole", error.Message);
+        Assert.Null(dal.AssignedRoles);
+    }
+
+    [Fact]
+    public async Task ListMenuForRolesAsync_FiltersByRoleUnion()
+    {
+        // 三条菜单：一条对所有人开放、一条仅 Viewer、一条仅 Admin；并集按角色过滤 + 仅启用项。
+        var menuDal = new StubMenuConfigDal([
+            new MenuConfigItem(Guid.NewGuid(), "public", "公开", null, [], null, 0, true),
+            new MenuConfigItem(Guid.NewGuid(), "viewer-only", "Viewer专属", null, ["Viewer"], null, 1, true),
+            new MenuConfigItem(Guid.NewGuid(), "admin-only", "Admin专属", null, ["Admin"], null, 2, true),
+            new MenuConfigItem(Guid.NewGuid(), "disabled", "已禁用", null, [], null, 3, false),
+        ]);
+        var service = new UserRoleService(
+            new RecordingUserDal(),
+            new RecordingCredentialDal(),
+            new RecordingRefreshSessionDal(),
+            menuDal,
+            new RecordingStampRotator(),
+            new RecordingUnitOfWork(),
+            new RecordingRoleAdmin(),
+            new RecordingRoleRegistry());
+
+        var items = await service.ListMenuForRolesAsync(["Viewer", "Editor"], CancellationToken.None);
+
+        Assert.Equal(2, items.Count);
+        Assert.Contains(items, item => item.Key == "public");
+        Assert.Contains(items, item => item.Key == "viewer-only");
+        Assert.DoesNotContain(items, item => item.Key == "admin-only");
+        Assert.DoesNotContain(items, item => item.Key == "disabled");
+    }
+
+    [Fact]
+    public async Task ListMenuForRolesAsync_WithEmptyRoles_OnlyReturnsPublicItems()
+    {
+        // 空角色集合（匿名调用）只返回 Roles=[] 的菜单；禁用项被排除。
+        var menuDal = new StubMenuConfigDal([
+            new MenuConfigItem(Guid.NewGuid(), "public", "公开", null, [], null, 0, true),
+            new MenuConfigItem(Guid.NewGuid(), "viewer-only", "Viewer专属", null, ["Viewer"], null, 1, true),
+        ]);
+        var service = new UserRoleService(
+            new RecordingUserDal(),
+            new RecordingCredentialDal(),
+            new RecordingRefreshSessionDal(),
+            menuDal,
+            new RecordingStampRotator(),
+            new RecordingUnitOfWork(),
+            new RecordingRoleAdmin(),
+            new RecordingRoleRegistry());
+
+        var items = await service.ListMenuForRolesAsync([], CancellationToken.None);
+
+        Assert.Single(items);
+        Assert.Equal("public", items[0].Key);
+    }
+
+    [Fact]
+    public async Task AssignRolesAsync_WhenSelfDemotingLastAdmin_RejectsRequest()
+    {
+        // 操作者即目标用户，且是最后一名 Admin 持有者 → 拒绝自我降级。
+        var roleAdmin = new RecordingRoleAdmin().Seed("Admin").Seed("Viewer");
+        var registry = new RecordingRoleRegistry().Seed("Admin").Seed("Viewer").SetUserIsAdmin(true).SetHolders(1);
+        var dal = new RecordingUserDal();
+        var service = new UserRoleService(
+            dal,
+            new RecordingCredentialDal(),
+            new RecordingRefreshSessionDal(),
+            MenuConfigs,
+            new RecordingStampRotator(),
+            new RecordingUnitOfWork(),
+            roleAdmin,
+            registry);
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.AssignRolesAsync(Guid.Empty, Guid.Empty, ["Viewer"], CancellationToken.None));
+
+        Assert.Contains("Admin", error.Message);
         Assert.Null(dal.AssignedRoles);
     }
 
@@ -267,7 +353,8 @@ public sealed class UserRoleServiceTests
         MenuConfigs,
         new RecordingStampRotator(),
         new RecordingUnitOfWork(),
-        new RecordingRoleAdmin());
+        new RecordingRoleAdmin().Seed("Viewer").Seed("Editor").Seed("Admin"),
+        new RecordingRoleRegistry().Seed("Viewer").Seed("Editor").Seed("Admin"));
 
 
     private sealed class RecordingMenuConfigDal : IMenuConfigDal
@@ -306,6 +393,42 @@ public sealed class UserRoleServiceTests
 
         public Task<int> DeleteSubtreeAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(1);
+    }
+
+    /// <summary>可预设返回数据的菜单 DAL 测试替身。</summary>
+    private sealed class StubMenuConfigDal : IMenuConfigDal
+    {
+        private readonly IReadOnlyList<MenuConfigItem> _items;
+
+        public StubMenuConfigDal(IReadOnlyList<MenuConfigItem> items) => _items = items;
+
+        public Task<IReadOnlyList<MenuConfigItem>> ListAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(_items);
+
+        public Task<MenuConfigItem> CreateAsync(
+            string key,
+            string label,
+            string? icon,
+            IReadOnlyCollection<string> roles,
+            Guid? parentId,
+            int sortOrder,
+            bool isEnabled,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<MenuConfigItem?> UpdateAsync(
+            Guid id,
+            FieldUpdate<string> label,
+            FieldUpdate<string> icon,
+            FieldUpdate<IReadOnlyCollection<string>> roles,
+            FieldUpdate<Guid?> parentId,
+            FieldUpdate<int> sortOrder,
+            FieldUpdate<bool> isEnabled,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<int> DeleteSubtreeAsync(Guid id, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class RecordingUserDal : IUserDal
@@ -461,9 +584,7 @@ public sealed class UserRoleServiceTests
         }
     }
 
-    /// <summary>
-    /// 抛异常型 stamp 轮换器：模拟 stamp 轮换阶段失败，验证 UoW 回滚语义。
-    /// </summary>
+    /// <summary>抛异常型 stamp 轮换器：模拟 stamp 轮换阶段失败，验证 UoW 回滚语义。</summary>
     private sealed class ThrowingStampRotator : IUserSecurityStampRotator
     {
         public Task RotateAsync(Guid userId, CancellationToken cancellationToken) =>
@@ -473,9 +594,7 @@ public sealed class UserRoleServiceTests
             throw new InvalidOperationException("stamp invalidation failed");
     }
 
-    /// <summary>
-    /// 记录型 UoW：直接执行操作，同时记录执行次数与是否抛异常，供单元测试验证事务边界被调用。
-    /// </summary>
+    /// <summary>记录型 UoW：直接执行操作，同时记录执行次数与是否抛异常，供单元测试验证事务边界被调用。</summary>
     private sealed class RecordingUnitOfWork : IUnitOfWork
     {
         public int ExecuteCount { get; private set; }
@@ -527,5 +646,40 @@ public sealed class UserRoleServiceTests
 
         public Task<bool> RenameAsync(string oldName, string newName, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+    }
+
+    /// <summary>IRoleRegistry stub：支持预设 Admin 持有状态与持有者计数，用于自我降级保护测试。</summary>
+    private sealed class RecordingRoleRegistry : IRoleRegistry
+    {
+        private readonly HashSet<string> _roles = new(StringComparer.Ordinal);
+        private bool _userIsAdmin;
+        private int _holders;
+
+        public RecordingRoleRegistry Seed(string name)
+        {
+            _roles.Add(name);
+            return this;
+        }
+
+        public RecordingRoleRegistry SetUserIsAdmin(bool value)
+        {
+            _userIsAdmin = value;
+            return this;
+        }
+
+        public RecordingRoleRegistry SetHolders(int count)
+        {
+            _holders = count;
+            return this;
+        }
+
+        public Task<bool> RoleExistsAsync(string name, CancellationToken cancellationToken) =>
+            Task.FromResult(_roles.Contains(name));
+
+        public Task<bool> UserHasRoleAsync(Guid userId, string name, CancellationToken cancellationToken) =>
+            Task.FromResult(_userIsAdmin && string.Equals(name, "Admin", StringComparison.Ordinal));
+
+        public Task<int> CountHoldersAsync(string name, CancellationToken cancellationToken) =>
+            Task.FromResult(_holders);
     }
 }

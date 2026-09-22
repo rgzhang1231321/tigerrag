@@ -99,6 +99,9 @@ public sealed class PasswordStrengthTests
                 services.AddSingleton<IUserSecurityStampRotator>(new NoopSecurityStampRotator());
                 services.RemoveAll<IOperationAuditWriter>();
                 services.AddSingleton<IOperationAuditWriter>(new StubOperationAuditWriter());
+                // 给 Admin 用户授予 users.resetPassword 权限，使能访问重置密码端点。
+                services.RemoveAll<IRoleEndpointGrantStore>();
+                services.AddSingleton<IRoleEndpointGrantStore>(new AllowAllGrantStore());
             });
         });
 
@@ -126,7 +129,7 @@ public sealed class PasswordStrengthTests
     private sealed class AdminUserDal : IUserDal
     {
         public static readonly UserAccount Admin =
-            new(Guid.NewGuid(), "admin", [SystemRoles.Admin]) { SecurityStamp = "test-stamp" };
+            new(Guid.NewGuid(), "admin", ["Admin"]) { SecurityStamp = "test-stamp" };
 
         public Task<UserAccount?> ValidateCredentialsAsync(string userName, string passwordHash, CancellationToken cancellationToken)
             => Task.FromResult<UserAccount?>(Admin);
@@ -188,8 +191,31 @@ public sealed class PasswordStrengthTests
     }
 
     /// <summary>
-    /// 存根审计写入器：密码强度测试不需要验证审计副作用，仅满足 DI 解析即可。
+    /// 全授权 store stub：所有 endpoint 一律返回已授权，用于不需要精细授权控制的测试。
     /// </summary>
+    private sealed class AllowAllGrantStore : IRoleEndpointGrantStore
+    {
+        public Task<IReadOnlyList<RoleEndpointGrant>> ListByRoleAsync(string roleName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<RoleEndpointGrant>>([]);
+
+        public Task<bool> HasGrantAsync(IEnumerable<string> userRoles, string endpointKey, CancellationToken cancellationToken) =>
+            Task.FromResult(true);
+
+        public Task GrantAsync(string roleName, string menuKey, string endpointKey, Guid actorId, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task RevokeAsync(string roleName, string endpointKey, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task<int> GrantAllInMenuAsync(string roleName, string menuKey, IReadOnlyCollection<MenuEndpointDescriptor> endpoints, Guid actorId, CancellationToken cancellationToken) =>
+            Task.FromResult(0);
+
+        public Task<int> RevokeAllInMenuAsync(string roleName, string menuKey, CancellationToken cancellationToken) =>
+            Task.FromResult(0);
+
+        public Task<int> ApplyBatchAsync(string roleName, IReadOnlyCollection<BatchEndpointChange> desiredEndpoints, Guid actorId, CancellationToken cancellationToken) =>
+            Task.FromResult(0);
+    }
     private sealed class StubOperationAuditWriter : IOperationAuditWriter
     {
         public Task RecordAsync(OperationAuditEntry entry, CancellationToken cancellationToken) => Task.CompletedTask;

@@ -20,7 +20,7 @@ function makeClient() {
 }
 
 function jsonResponse(body: unknown) {
-  return { ok: true, status: 200, json: async () => body } as Response
+  return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) } as Response
 }
 
 function envelope<T>(data: T, flag = true, message = 'success') {
@@ -39,14 +39,12 @@ function envelope<T>(data: T, flag = true, message = 'success') {
 const seed = [
   {
     name: 'Admin',
-    isSystem: true,
     userCount: 1,
     menuCount: 0,
     menuNames: [],
   },
   {
     name: 'CustomRole',
-    isSystem: false,
     userCount: 0,
     menuCount: 0,
     menuNames: [],
@@ -103,7 +101,6 @@ describe('useRoles', () => {
           jsonResponse(
             envelope({
               name: body.name,
-              isSystem: false,
               userCount: 0,
               menuCount: 0,
               menuNames: [],
@@ -175,7 +172,6 @@ describe('useRoles', () => {
           jsonResponse(
             envelope({
               name: body.name,
-              isSystem: false,
               userCount: 0,
               menuCount: 0,
               menuNames: [],

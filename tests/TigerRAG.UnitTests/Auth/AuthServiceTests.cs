@@ -10,7 +10,7 @@ public sealed class AuthServiceTests
     [Fact]
     public async Task LoginAsync_WithValidCredentials_IssuesAccessToken()
     {
-        var user = new UserAccount(Guid.NewGuid(), "admin", [SystemRoles.Admin]);
+        var user = new UserAccount(Guid.NewGuid(), "admin", ["Admin"]);
         var expected = new AccessToken("signed-token", DateTimeOffset.UtcNow.AddMinutes(15));
         var refresh = new RefreshToken("refresh-token", DateTimeOffset.UtcNow.AddDays(7));
         var sessions = new RecordingRefreshSessionDal(refresh);
@@ -38,7 +38,7 @@ public sealed class AuthServiceTests
     [Fact]
     public async Task RefreshAsync_WithValidRefreshToken_RotatesSessionAndIssuesAccessToken()
     {
-        var user = new UserAccount(Guid.NewGuid(), "viewer", [SystemRoles.Viewer]);
+        var user = new UserAccount(Guid.NewGuid(), "viewer", ["Viewer"]);
         var access = new AccessToken("new-access-token", DateTimeOffset.UtcNow.AddMinutes(15));
         var refresh = new RefreshToken("new-refresh-token", DateTimeOffset.UtcNow.AddDays(7));
         var sessions = new RecordingRefreshSessionDal(refresh) { RotatedUser = user };
@@ -66,7 +66,7 @@ public sealed class AuthServiceTests
     [Fact]
     public async Task LogoutAsync_WhenUserExists_RecordsAudit()
     {
-        var user = new UserAccount(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), "viewer", [SystemRoles.Viewer]);
+        var user = new UserAccount(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), "viewer", ["Viewer"]);
         var sessions = new RecordingRefreshSessionDal(null) { TokenUser = user };
         var audit = new RecordingAuditWriter();
         var service = CreateService(null, null, sessions, audit: audit);
@@ -148,7 +148,7 @@ public sealed class AuthServiceTests
     [Fact]
     public async Task LoginAsync_WarmsRevocationCache()
     {
-        var user = new UserAccount(Guid.NewGuid(), "admin", [SystemRoles.Admin]) { SecurityStamp = "stamp-1" };
+        var user = new UserAccount(Guid.NewGuid(), "admin", ["Admin"]) { SecurityStamp = "stamp-1" };
         var sessions = new RecordingRefreshSessionDal(new RefreshToken("r", DateTimeOffset.UtcNow.AddDays(1)));
         var cache = new RecordingRevocationCache();
         var service = CreateService(
@@ -168,7 +168,7 @@ public sealed class AuthServiceTests
     [Fact]
     public async Task LoginAsync_WhenCacheThrows_StillReturnsToken()
     {
-        var user = new UserAccount(Guid.NewGuid(), "admin", [SystemRoles.Admin]) { SecurityStamp = "stamp-1" };
+        var user = new UserAccount(Guid.NewGuid(), "admin", ["Admin"]) { SecurityStamp = "stamp-1" };
         var sessions = new RecordingRefreshSessionDal(new RefreshToken("r", DateTimeOffset.UtcNow.AddDays(1)));
         var cache = new ThrowingRevocationCache();
         var service = CreateService(

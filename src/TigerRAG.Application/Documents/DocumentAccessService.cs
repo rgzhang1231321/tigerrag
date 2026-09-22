@@ -1,10 +1,12 @@
 using TigerRAG.Application.OperationAudit;
-using TigerRAG.Application.Shared;
+using TigerRAG.Application.Roles;
 
 namespace TigerRAG.Application.Documents;
 
-/// <summary>文档级访问范围计算服务。Admin 直接全放；其他角色合并 KB 拥有者、用户 ACL、角色 ACL。</summary>
-public sealed class DocumentAccessService(IDocumentAccessDal documentAccess)
+/// <summary>文档级访问范围计算服务。持有 Admin 角色的用户走全放；其他角色合并 KB 拥有者、用户 ACL、角色 ACL。</summary>
+public sealed class DocumentAccessService(
+    IDocumentAccessDal documentAccess,
+    IRoleRegistry roleRegistry)
 {
     /// <summary>计算当前用户可见的文档 ID 集合；Admin 短路返回 <c>AllDocuments=true</c>。</summary>
     public async Task<DocumentAccessScope> GetScopeAsync(
@@ -12,7 +14,7 @@ public sealed class DocumentAccessService(IDocumentAccessDal documentAccess)
         IReadOnlyCollection<string> roles,
         CancellationToken cancellationToken)
     {
-        if (roles.Contains(SystemRoles.Admin, StringComparer.Ordinal))
+        if (await roleRegistry.UserHasRoleAsync(userId, "Admin", cancellationToken))
         {
             return new DocumentAccessScope(true, []);
         }
@@ -33,12 +35,6 @@ public sealed class DocumentAccessService(IDocumentAccessDal documentAccess)
         IReadOnlyCollection<string> roles,
         CancellationToken cancellationToken)
     {
-        var invalidRole = roles.FirstOrDefault(role => !SystemRoles.All.Contains(role));
-        if (invalidRole is not null)
-        {
-            throw new ArgumentException($"Unknown system role: {invalidRole}", nameof(roles));
-        }
-
         return documentAccess.ReplacePermissionsAsync(
             documentId,
             actorId,

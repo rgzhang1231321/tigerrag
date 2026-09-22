@@ -1,5 +1,5 @@
 using TigerRAG.Application.Documents;
-using TigerRAG.Application.Shared;
+using TigerRAG.Application.Roles;
 
 namespace TigerRAG.UnitTests.Documents;
 
@@ -9,11 +9,12 @@ public sealed class DocumentAccessServiceTests
     public async Task GetScopeAsync_ForAdmin_GrantsAllDocumentsWithoutDalQuery()
     {
         var dal = new RecordingDocumentAccessDal([]);
-        var service = new DocumentAccessService(dal);
+        var registry = new FakeRoleRegistry(true); // 用户持有 Admin
+        var service = new DocumentAccessService(dal, registry);
 
         var scope = await service.GetScopeAsync(
             Guid.NewGuid(),
-            [SystemRoles.Admin],
+            ["Admin"],
             CancellationToken.None);
 
         Assert.True(scope.AllDocuments);
@@ -26,43 +27,27 @@ public sealed class DocumentAccessServiceTests
     {
         var allowedDocument = Guid.NewGuid();
         var dal = new RecordingDocumentAccessDal([allowedDocument]);
-        var service = new DocumentAccessService(dal);
+        var registry = new FakeRoleRegistry(false); // 用户不持有 Admin
+        var service = new DocumentAccessService(dal, registry);
         var userId = Guid.NewGuid();
 
         var scope = await service.GetScopeAsync(
             userId,
-            [SystemRoles.Viewer],
+            ["Viewer"],
             CancellationToken.None);
 
         Assert.False(scope.AllDocuments);
         Assert.Equal([allowedDocument], scope.DocumentIds);
         Assert.Equal(userId, dal.UserId);
-        Assert.Equal([SystemRoles.Viewer], dal.Roles);
-    }
-
-    [Fact]
-    public async Task ReplacePermissionsAsync_WithUnknownRole_RejectsRequest()
-    {
-        var dal = new RecordingDocumentAccessDal([]);
-        var service = new DocumentAccessService(dal);
-
-        var error = await Assert.ThrowsAsync<ArgumentException>(() => service.ReplacePermissionsAsync(
-            Guid.NewGuid(),
-            Guid.NewGuid(),
-            isAdmin: false,
-            [],
-            ["SuperUser"],
-            CancellationToken.None));
-
-        Assert.Contains("SuperUser", error.Message);
-        Assert.Null(dal.PermissionDocumentId);
+        Assert.Equal(["Viewer"], dal.Roles);
     }
 
     [Fact]
     public async Task ReplacePermissionsAsync_WithKnownPrincipals_NormalizesAndUsesDal()
     {
         var dal = new RecordingDocumentAccessDal([]);
-        var service = new DocumentAccessService(dal);
+        var registry = new FakeRoleRegistry(false);
+        var service = new DocumentAccessService(dal, registry);
         var actorId = Guid.NewGuid();
         var documentId = Guid.NewGuid();
         var userId = Guid.NewGuid();
@@ -72,14 +57,27 @@ public sealed class DocumentAccessServiceTests
             actorId,
             isAdmin: true,
             [userId, userId],
-            [SystemRoles.Viewer, SystemRoles.Editor, SystemRoles.Viewer],
+            ["Viewer", "Editor", "Viewer"],
             CancellationToken.None);
 
         Assert.Equal(documentId, dal.PermissionDocumentId);
         Assert.Equal(actorId, dal.ActorId);
         Assert.True(dal.IsAdmin);
         Assert.Equal([userId], dal.PermissionUserIds);
-        Assert.Equal([SystemRoles.Editor, SystemRoles.Viewer], dal.PermissionRoles);
+        Assert.Equal(["Editor", "Viewer"], dal.PermissionRoles);
+    }
+
+    /// <summary>测试用 IRoleRegistry 伪造：直接返回预设的 Admin 持有状态，不走 DB。</summary>
+    private sealed class FakeRoleRegistry(bool isAdmin) : IRoleRegistry
+    {
+        public Task<bool> RoleExistsAsync(string name, CancellationToken cancellationToken) =>
+            Task.FromResult(true);
+
+        public Task<bool> UserHasRoleAsync(Guid userId, string name, CancellationToken cancellationToken) =>
+            Task.FromResult(isAdmin && string.Equals(name, "Admin", StringComparison.Ordinal));
+
+        public Task<int> CountHoldersAsync(string name, CancellationToken cancellationToken) =>
+            Task.FromResult(isAdmin ? 1 : 0);
     }
 
     private sealed class RecordingDocumentAccessDal(IReadOnlyList<Guid> result) : IDocumentAccessDal

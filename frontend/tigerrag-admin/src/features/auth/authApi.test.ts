@@ -109,7 +109,7 @@ describe('authApi.changePassword', () => {
 })
 
 function jsonResponse(body: unknown) {
-  return { ok: true, status: 200, json: async () => body } as Response
+  return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) } as Response
 }
 
 function envelope<T>(data: T, flag = true, message = 'success') {

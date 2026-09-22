@@ -114,14 +114,14 @@ public sealed class MenuDomainServiceTests
     [Fact]
     public static void ValidateRoles_NonEmptyDistinct_IsAllowed()
     {
-        MenuDomainService.ValidateRoles(new[] { SystemRoles.Admin, SystemRoles.Viewer });
+        MenuDomainService.ValidateRoles(new[] { "Admin", "Viewer" });
     }
 
     [Fact]
     public static void ValidateRoles_BlankRole_Throws()
     {
         var error = Assert.Throws<ArgumentException>(() =>
-            MenuDomainService.ValidateRoles(new[] { SystemRoles.Admin, " " }));
+            MenuDomainService.ValidateRoles(new[] { "Admin", " " }));
         Assert.Contains("角色名不能为空", error.Message);
     }
 
@@ -129,7 +129,7 @@ public sealed class MenuDomainServiceTests
     public static void ValidateRoles_DuplicateRole_Throws()
     {
         var error = Assert.Throws<ArgumentException>(() =>
-            MenuDomainService.ValidateRoles(new[] { SystemRoles.Admin, SystemRoles.Admin }));
+            MenuDomainService.ValidateRoles(new[] { "Admin", "Admin" }));
         Assert.Contains("重复", error.Message);
     }
 }

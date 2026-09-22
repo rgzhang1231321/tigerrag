@@ -72,4 +72,8 @@ public static class OperationAuditActions
     public const string AuthLogin = "auth.login";
     public const string AuthLogout = "auth.logout";
     public const string AuthPasswordChange = "auth.password.change";
+    public const string RoleEndpointGrantAll = "role.endpoint.grant.all";
+    public const string RoleEndpointRevokeAll = "role.endpoint.revoke.all";
+    public const string RoleEndpointToggle = "role.endpoint.toggle";
+    public const string RoleEndpointApplyBatch = "role.endpoint.applyBatch";
 }

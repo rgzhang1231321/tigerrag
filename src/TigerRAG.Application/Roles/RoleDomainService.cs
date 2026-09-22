@@ -1,10 +1,8 @@
 using System.Text.RegularExpressions;
 
-using TigerRAG.Application.Shared;
-
 namespace TigerRAG.Application.Roles;
 
-/// <summary>角色名格式与保留集判定的纯静态规则。供 Application 服务复用，不依赖任何基础设施类型。</summary>
+/// <summary>角色名格式与基础校验的纯静态规则。供 Application 服务复用，不依赖任何基础设施类型。</summary>
 public static class RoleDomainService
 {
     /// <summary>PascalCase、字母数字、长度 2–64；与 IdentityRole.Name 容量匹配，禁下划线/点/空格以避免与 permission code 混淆。</summary>
@@ -22,10 +20,4 @@ public static class RoleDomainService
                 nameof(name));
         }
     }
-
-    /// <summary>是否属于 5 个系统保留名之一。保留名禁删禁重建。</summary>
-    public static bool IsReserved(string name) => SystemRoles.All.Contains(name);
-
-    /// <summary>是否是不可删除的 Admin 系统角色。前端 <c>permissions.ts</c> 编译期联合类型与后端 <c>[Authorize(Roles = "Admin")]</c> 强依赖。</summary>
-    public static bool IsAdmin(string name) => string.Equals(name, SystemRoles.Admin, StringComparison.Ordinal);
 }

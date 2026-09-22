@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
-using TigerRAG.Application.Shared;
 using TigerRAG.Infrastructure.Identity;
 using TigerRAG.Infrastructure.Persistence.Entities;
 using TigerRAG.Infrastructure.Persistence.Entities.ApiLogs;
@@ -11,6 +10,7 @@ using TigerRAG.Infrastructure.Persistence.Entities.Documents;
 using TigerRAG.Infrastructure.Persistence.Entities.KnowledgeBases;
 using TigerRAG.Infrastructure.Persistence.Entities.Menus;
 using TigerRAG.Infrastructure.Persistence.Entities.OperationAudit;
+using TigerRAG.Infrastructure.Persistence.Entities.RoleEndpointGrants;
 
 namespace TigerRAG.Infrastructure.Persistence;
 
@@ -31,6 +31,7 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
     public DbSet<menu_config_record> MenuConfigs => Set<menu_config_record>();
     public DbSet<api_log_record> ApiLogs => Set<api_log_record>();
     public DbSet<operation_audit_record> OperationAudits => Set<operation_audit_record>();
+    public DbSet<role_endpoint_grant_record> RoleEndpointGrants => Set<role_endpoint_grant_record>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -50,6 +51,7 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
         ConfigureMenuConfigs(builder);
         ConfigureApiLogs(builder);
         ConfigureOperationAudits(builder);
+        ConfigureRoleEndpointGrants(builder);
         SeedRoles(builder);
     }
 
@@ -186,16 +188,30 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
         });
     }
 
-    // 固定 5 个角色硬编码进种子数据；与 SystemRoles 保持一致。
+    private static void ConfigureRoleEndpointGrants(ModelBuilder builder)
+    {
+        builder.Entity<role_endpoint_grant_record>(entity =>
+        {
+            entity.ToTable("role_endpoint_grant");
+            entity.HasKey(value => new { value.RoleName, value.EndpointKey });
+            entity.Property(value => value.RoleName).HasMaxLength(256);
+            entity.Property(value => value.MenuKey).HasMaxLength(100);
+            entity.Property(value => value.EndpointKey).HasMaxLength(200);
+            entity.HasIndex(value => value.MenuKey);
+            entity.HasIndex(value => value.EndpointKey);
+        });
+    }
+
+    // 5 个默认角色 seed 进 AspNetRoles：bootstrap 阶段由 AdminBootstrapper 保证存在；任何角色后续可重命名或删除。
     private static void SeedRoles(ModelBuilder builder)
     {
         var roles = new[]
         {
-            Role("8f86fa4c-c8e5-4bc0-a563-528b70a74576", SystemRoles.Admin),
-            Role("1f0187a1-2897-4bf8-ab73-27fa1a2e4c76", SystemRoles.KbManager),
-            Role("cb81efa4-2203-4f2b-88e4-1e18af3ba95c", SystemRoles.Editor),
-            Role("eadf72f7-d444-43cc-9fd9-5aa320640274", SystemRoles.Viewer),
-            Role("9081bc7b-1762-43cf-8649-bc30ed21ec52", SystemRoles.Auditor)
+            Role("8f86fa4c-c8e5-4bc0-a563-528b70a74576", "Admin"),
+            Role("1f0187a1-2897-4bf8-ab73-27fa1a2e4c76", "KbManager"),
+            Role("cb81efa4-2203-4f2b-88e4-1e18af3ba95c", "Editor"),
+            Role("eadf72f7-d444-43cc-9fd9-5aa320640274", "Viewer"),
+            Role("9081bc7b-1762-43cf-8649-bc30ed21ec52", "Auditor")
         };
 
         builder.Entity<IdentityRole<Guid>>().HasData(roles);

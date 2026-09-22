@@ -117,8 +117,8 @@ public sealed class AuthController(AuthService authService) : ControllerBase
     /// <param name="request">当前密码哈希与新密码哈希。</param>
     /// <param name="cancellationToken">用于取消当前请求的令牌。</param>
     /// <returns>修改成功时返回空数据；当前密码错误时返回非零业务码。</returns>
-    [Authorize]
     [HttpPost("change-password")]
+    [MenuEndpoint("auth", "auth.changePassword", "修改当前用户密码")]
     public async Task<IActionResult> ChangePassword(
         ChangePasswordRequest request,
         CancellationToken cancellationToken)

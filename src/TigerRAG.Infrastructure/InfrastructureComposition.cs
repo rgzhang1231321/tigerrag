@@ -1,7 +1,11 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Minio;
 using Qdrant.Client;
 using StackExchange.Redis;
@@ -68,6 +72,7 @@ public static class InfrastructureComposition
         services.AddScoped<IMenuConfigDal, MenuConfigDal>();
         services.AddScoped<IRoleMenuReference, MenuReferenceDal>();
         services.AddScoped<IRoleAdmin, RoleAdminDal>();
+        services.AddScoped<IRoleRegistry, RoleRegistry>();
         services.AddScoped<RoleAdminService>();
         services.AddScoped<IAccessTokenIssuer, JwtAccessTokenIssuer>();
         services.AddScoped<AuthService>();
@@ -79,12 +84,26 @@ public static class InfrastructureComposition
         services.AddScoped<ApiLogService>();
         services.AddScoped<IOperationAuditDal, OperationAuditDal>();
         services.AddScoped<IOperationAuditWriter, OperationAuditDal>();
+        // 角色-Endpoint 授权缓存 L1：键 auth:role:{role}:endpoints（Redis Set），TTL 默认 5 分钟，由装饰器在写路径失效。
+        services.AddScoped<RoleEndpointGrantStore>();
+        services.AddScoped<IRoleEndpointGrantStore>(sp => new CachedRoleEndpointGrantStore(
+            sp.GetRequiredService<RoleEndpointGrantStore>(),
+            sp.GetRequiredService<IRoleEndpointGrantCache>(),
+            sp.GetRequiredService<ILogger<CachedRoleEndpointGrantStore>>()));
+        services.AddScoped<RoleEndpointGrantService>();
 
         services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(
             configuration.GetConnectionString("Redis")
                 ?? throw new InvalidOperationException("ConnectionStrings:Redis is required.")));
         // JWT 按用户撤权的 Redis L1：键 auth:user:{guid}:stamp，TTL = AccessTokenMinutes*60 + ClockSkewSeconds。
         services.AddSingleton<IAuthRevocationCache, RedisAuthRevocationCache>();
+        services.AddSingleton<IRoleEndpointGrantCache, RedisRoleEndpointGrantCache>();
+        services.Configure<GrantCacheOptions>(configuration.GetSection(GrantCacheOptions.DefaultSectionName));
+        services.AddSingleton<IMenuEndpointRegistry>(sp =>
+        {
+            var provider = sp.GetRequiredService<IActionDescriptorCollectionProvider>();
+            return new MenuEndpointRegistry(provider.ActionDescriptors.Items);
+        });
         services.AddSingleton(_ => new QdrantClient(new Uri(
             configuration["Services:Qdrant"]
                 ?? throw new InvalidOperationException("Services:Qdrant is required."))));

@@ -53,11 +53,13 @@ public sealed class StatisticsReportTests : IClassFixture<TigerRagApiFactory>
             {
                 services.RemoveAll<IUserDal>();
                 services.AddSingleton<IUserDal>(new MutableUserStore(
-                    new UserAccount(Guid.NewGuid(), "report-admin", [SystemRoles.Admin]) { SecurityStamp = "stamp-2" }));
+                    new UserAccount(Guid.NewGuid(), "report-admin", ["Admin"]) { SecurityStamp = "stamp-2" }));
                 services.RemoveAll<IUserCredentialDal>();
                 services.AddSingleton<IUserCredentialDal>(new NoopCredentialDal());
                 services.RemoveAll<IRefreshSessionDal>();
                 services.AddSingleton<IRefreshSessionDal>(new NoopRefreshSessionDal());
+                services.RemoveAll<IRoleEndpointGrantStore>();
+                services.AddSingleton<IRoleEndpointGrantStore>(new AllowAllGrantStore());
             });
         });
         using var client = localFactory.CreateClient();
@@ -96,11 +98,13 @@ public sealed class StatisticsReportTests : IClassFixture<TigerRagApiFactory>
             {
                 services.RemoveAll<IUserDal>();
                 services.AddSingleton<IUserDal>(new MutableUserStore(
-                    new UserAccount(Guid.NewGuid(), "report-admin", [SystemRoles.Admin]) { SecurityStamp = "stamp-3" }));
+                    new UserAccount(Guid.NewGuid(), "report-admin", ["Admin"]) { SecurityStamp = "stamp-3" }));
                 services.RemoveAll<IUserCredentialDal>();
                 services.AddSingleton<IUserCredentialDal>(new NoopCredentialDal());
                 services.RemoveAll<IRefreshSessionDal>();
                 services.AddSingleton<IRefreshSessionDal>(new NoopRefreshSessionDal());
+                services.RemoveAll<IRoleEndpointGrantStore>();
+                services.AddSingleton<IRoleEndpointGrantStore>(new AllowAllGrantStore());
             });
         });
         using var client = localFactory.CreateClient();
@@ -137,11 +141,13 @@ public sealed class StatisticsReportTests : IClassFixture<TigerRagApiFactory>
             {
                 services.RemoveAll<IUserDal>();
                 services.AddSingleton<IUserDal>(new MutableUserStore(
-                    new UserAccount(Guid.NewGuid(), "report-admin", [SystemRoles.Admin]) { SecurityStamp = "stamp-4" }));
+                    new UserAccount(Guid.NewGuid(), "report-admin", ["Admin"]) { SecurityStamp = "stamp-4" }));
                 services.RemoveAll<IUserCredentialDal>();
                 services.AddSingleton<IUserCredentialDal>(new NoopCredentialDal());
                 services.RemoveAll<IRefreshSessionDal>();
                 services.AddSingleton<IRefreshSessionDal>(new NoopRefreshSessionDal());
+                services.RemoveAll<IRoleEndpointGrantStore>();
+                services.AddSingleton<IRoleEndpointGrantStore>(new AllowAllGrantStore());
             });
         });
         using var client = localFactory.CreateClient();
@@ -206,6 +212,33 @@ public sealed class StatisticsReportTests : IClassFixture<TigerRagApiFactory>
         public Task ResetPasswordAsync(Guid userId, string passwordHash, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task<bool> DeleteAsync(Guid userId, CancellationToken cancellationToken) => Task.FromResult(true);
         public Task SetLockoutAsync(Guid userId, DateTimeOffset? lockoutEnd, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 全授权 store stub：所有 endpoint 一律返回已授权，用于不需要精细授权控制的测试。
+    /// </summary>
+    private sealed class AllowAllGrantStore : IRoleEndpointGrantStore
+    {
+        public Task<IReadOnlyList<RoleEndpointGrant>> ListByRoleAsync(string roleName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<RoleEndpointGrant>>([]);
+
+        public Task<bool> HasGrantAsync(IEnumerable<string> userRoles, string endpointKey, CancellationToken cancellationToken) =>
+            Task.FromResult(true);
+
+        public Task GrantAsync(string roleName, string menuKey, string endpointKey, Guid actorId, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task RevokeAsync(string roleName, string endpointKey, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task<int> GrantAllInMenuAsync(string roleName, string menuKey, IReadOnlyCollection<MenuEndpointDescriptor> endpoints, Guid actorId, CancellationToken cancellationToken) =>
+            Task.FromResult(0);
+
+        public Task<int> RevokeAllInMenuAsync(string roleName, string menuKey, CancellationToken cancellationToken) =>
+            Task.FromResult(0);
+
+        public Task<int> ApplyBatchAsync(string roleName, IReadOnlyCollection<BatchEndpointChange> desiredEndpoints, Guid actorId, CancellationToken cancellationToken) =>
+            Task.FromResult(0);
     }
 
     private sealed class NoopRefreshSessionDal : IRefreshSessionDal

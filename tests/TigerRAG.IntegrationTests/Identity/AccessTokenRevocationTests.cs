@@ -26,7 +26,7 @@ public sealed class AccessTokenRevocationTests
     {
         var userId = Guid.NewGuid();
         var store = new MutableUserStore(
-            new UserAccount(userId, "admin", [SystemRoles.Admin]) { SecurityStamp = "stamp-1" });
+            new UserAccount(userId, "admin", ["Admin"]) { SecurityStamp = "stamp-1" });
         using var factory = CreateFactory(store);
         using var client = factory.CreateClient();
 
@@ -46,7 +46,7 @@ public sealed class AccessTokenRevocationTests
     {
         var userId = Guid.NewGuid();
         var store = new MutableUserStore(
-            new UserAccount(userId, "admin", [SystemRoles.Admin]) { SecurityStamp = "stamp-1" });
+            new UserAccount(userId, "admin", ["Admin"]) { SecurityStamp = "stamp-1" });
         using var factory = CreateFactory(store);
         using var client = factory.CreateClient();
 
@@ -62,7 +62,7 @@ public sealed class AccessTokenRevocationTests
     {
         var userId = Guid.NewGuid();
         var store = new MutableUserStore(
-            new UserAccount(userId, "admin", [SystemRoles.Admin]) { SecurityStamp = "stamp-1" });
+            new UserAccount(userId, "admin", ["Admin"]) { SecurityStamp = "stamp-1" });
         using var factory = CreateFactory(store);
         using var client = factory.CreateClient();
 
@@ -81,7 +81,7 @@ public sealed class AccessTokenRevocationTests
     {
         var userId = Guid.NewGuid();
         var store = new MutableUserStore(
-            new UserAccount(userId, "admin", [SystemRoles.Admin]) { SecurityStamp = "stamp-1" });
+            new UserAccount(userId, "admin", ["Admin"]) { SecurityStamp = "stamp-1" });
         using var factory = CreateFactory(store);
         using var client = factory.CreateClient();
 
@@ -100,12 +100,12 @@ public sealed class AccessTokenRevocationTests
     {
         var userId = Guid.NewGuid();
         var store = new MutableUserStore(
-            new UserAccount(userId, "admin", [SystemRoles.Admin]) { SecurityStamp = "stamp-1" });
+            new UserAccount(userId, "admin", ["Admin"]) { SecurityStamp = "stamp-1" });
         using var factory = CreateFactory(store);
 
         // 直接构造一个空 stamp 的 token：issuer 会写出 security_stamp="" 的 claim，
         // 校验器把空串视为缺失，强制走重登路径——P1 修复部署后旧 token 立刻 401。
-        var forged = await IssueTokenForUserAsync(factory.Services, new UserAccount(userId, "admin", [SystemRoles.Admin]));
+        var forged = await IssueTokenForUserAsync(factory.Services, new UserAccount(userId, "admin", ["Admin"]));
 
         using var client = factory.CreateClient();
         var response = await SendMeAsync(client, forged);
@@ -119,13 +119,13 @@ public sealed class AccessTokenRevocationTests
     {
         var userId = Guid.NewGuid();
         var store = new MutableUserStore(
-            new UserAccount(userId, "admin", [SystemRoles.Admin]) { SecurityStamp = "stamp-1" });
+            new UserAccount(userId, "admin", ["Admin"]) { SecurityStamp = "stamp-1" });
         using var factory = CreateFactory(store);
 
         // 用错的 stamp 签发：模拟 token 声称的 stamp 与 DB 不同（角色被改、密码被改等情形）。
         var forged = await IssueTokenForUserAsync(
             factory.Services,
-            new UserAccount(userId, "admin", [SystemRoles.Admin]) { SecurityStamp = "wrong-stamp" });
+            new UserAccount(userId, "admin", ["Admin"]) { SecurityStamp = "wrong-stamp" });
 
         using var client = factory.CreateClient();
         var response = await SendMeAsync(client, forged);
@@ -149,8 +149,31 @@ public sealed class AccessTokenRevocationTests
                 services.AddSingleton<IUserCredentialDal>(new NoopCredentialDal());
                 services.RemoveAll<IRefreshSessionDal>();
                 services.AddSingleton<IRefreshSessionDal>(new NoopRefreshSessionDal());
+                // 这些用例验 JWT 撤权（stamp / 删除 / 锁口），与 endpoint 授权正交：
+                // 默认放行 users.me 让撤权路径可达 controller action，由 action 内部判断并返回 401 envelope。
+                services.RemoveAll<IRoleEndpointGrantStore>();
+                services.AddSingleton<IRoleEndpointGrantStore>(new AllowAllGrantStore());
             });
         });
+
+    private sealed class AllowAllGrantStore : IRoleEndpointGrantStore
+    {
+        public Task<IReadOnlyList<RoleEndpointGrant>> ListByRoleAsync(string roleName, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<RoleEndpointGrant>>([]);
+        public Task<bool> HasGrantAsync(IEnumerable<string> userRoles, string endpointKey, CancellationToken cancellationToken) =>
+            Task.FromResult(true);
+        public Task GrantAsync(string roleName, string menuKey, string endpointKey, Guid actorId, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+        public Task RevokeAsync(string roleName, string endpointKey, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+        public Task<int> GrantAllInMenuAsync(string roleName, string menuKey, IReadOnlyCollection<MenuEndpointDescriptor> endpoints, Guid actorId, CancellationToken cancellationToken) =>
+            Task.FromResult(0);
+        public Task<int> RevokeAllInMenuAsync(string roleName, string menuKey, CancellationToken cancellationToken) =>
+            Task.FromResult(0);
+
+        public Task<int> ApplyBatchAsync(string roleName, IReadOnlyCollection<BatchEndpointChange> desiredEndpoints, Guid actorId, CancellationToken cancellationToken) =>
+            Task.FromResult(0);
+    }
 
     private static async Task<LoginOutcome> LoginAndReadTokenAsync(HttpClient client)
     {

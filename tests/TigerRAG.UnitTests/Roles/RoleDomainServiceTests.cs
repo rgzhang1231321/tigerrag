@@ -1,9 +1,8 @@
 using TigerRAG.Application.Roles;
-using TigerRAG.Application.Shared;
 
 namespace TigerRAG.UnitTests.Roles;
 
-/// <summary>角色名格式与保留集判定单元测试。</summary>
+/// <summary>角色名格式校验单元测试。</summary>
 public sealed class RoleDomainServiceTests
 {
     [Theory]
@@ -35,17 +34,4 @@ public sealed class RoleDomainServiceTests
         var error = Assert.Throws<ArgumentException>(() => RoleDomainService.EnsureName(name));
         Assert.Contains("角色名", error.Message);
     }
-
-    [Theory]
-    [InlineData(SystemRoles.Admin)]
-    [InlineData(SystemRoles.KbManager)]
-    [InlineData(SystemRoles.Editor)]
-    [InlineData(SystemRoles.Viewer)]
-    [InlineData(SystemRoles.Auditor)]
-    public void IsReserved_WithSystemRole_ReturnsTrue(string name) =>
-        Assert.True(RoleDomainService.IsReserved(name));
-
-    [Fact]
-    public void IsReserved_WithCustomRole_ReturnsFalse() =>
-        Assert.False(RoleDomainService.IsReserved("CustomRole"));
 }

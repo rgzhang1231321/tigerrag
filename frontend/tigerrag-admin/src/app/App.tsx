@@ -10,19 +10,17 @@ import { Dropdown, Layout, Menu, Spin, Tag } from 'antd'
 import type { MenuProps } from 'antd'
 import { lazy, Suspense, useEffect, useMemo, useState, createElement } from 'react'
 import { Link, Route, Routes, useLocation } from 'react-router-dom'
-import { logout, refreshSession } from '../features/auth/authApi'
+import { logout } from '../features/auth/authApi'
 import { useAuthStore, restoreSessionFromCache } from '../features/auth/authStore'
-import type { AuthUser } from '../features/auth/authStore'
-import { hasRole } from '../features/auth/permissions'
+import { refreshSessionShared } from './http'
 import { menuIconMap } from '../features/menu/menuIcons'
-import { useMenuTree } from '../features/menu/useMenuConfig'
+import { useVisibleMenuTree } from '../features/menu/useMenuConfig'
 import { useDashboardMetrics } from '../features/statistics/useStatistics'
 import { MetricCard } from '../components/MetricCard/MetricCard'
 import { QuickAction } from '../components/QuickAction/QuickAction'
 import { DashboardCharts } from '../components/DashboardCharts/DashboardCharts'
 import { ChangePasswordDialog } from '../features/users/ChangePasswordDialog'
 import { ForbiddenPage } from './ForbiddenPage'
-import { RequireRole } from './RequireRole'
 
 const UsersPage = lazy(() =>
   import('../features/users/UsersPage').then((module) => ({ default: module.UsersPage })),
@@ -51,12 +49,11 @@ interface NavigationItem {
   key: string
   icon?: React.ReactNode
   label: React.ReactNode
-  roles?: readonly string[]
   children?: NavigationItem[]
 }
 
 // 把后端平铺列表组装成前端导航树：ParentId 为 null 的是顶级，其余按 ParentId 归到 children。
-function buildNavigation(items: ReadonlyArray<{ id: string; key: string; label: string; icon: string | null; roles: string[]; parentId: string | null }>): NavigationItem[] {
+function buildNavigation(items: ReadonlyArray<{ id: string; key: string; label: string; icon: string | null; parentId: string | null }>): NavigationItem[] {
   const roots: NavigationItem[] = []
   const childrenMap = new Map<string, NavigationItem[]>()
   for (const item of items) {
@@ -70,7 +67,6 @@ function buildNavigation(items: ReadonlyArray<{ id: string; key: string; label: 
           ? <Tag style={{ margin: 0 }}>{item.icon}</Tag>
           : undefined,
       label: item.label,
-      roles: item.roles,
     }
     if (item.parentId) {
       const siblings = childrenMap.get(item.parentId) ?? []
@@ -103,14 +99,6 @@ function findActiveParent(pathname: string, items: NavigationItem[]): Navigation
   return null
 }
 
-// 菜单可见性：空数组/NULL = 所有人可见；Admin 始终可见（bypass）；其余按角色名单过滤。
-function isMenuVisible(user: AuthUser | null, item: NavigationItem): boolean {
-  if (user === null) return false
-  if (item.roles === undefined || item.roles.length === 0) return true
-  if (hasRole(user, 'Admin')) return true
-  return item.roles.some((role) => hasRole(user, role))
-}
-
 export function App() {
   const [ready, setReady] = useState(false)
   const user = useAuthStore((state) => state.user)
@@ -123,12 +111,18 @@ export function App() {
     restoreSessionFromCache()
   }, [])
 
-  // 用 refresh cookie 换取新 accessToken。失败时什么都不做——保留 sessionStorage 恢复的 user，
-  // 让后续 API 请求的 401 刷新机制兜底；若 cookie 与缓存都失效，API 401 会触发 http.ts 里的刷新重试。
+  // 用 refresh cookie 换取新 accessToken。失败时清空登录态，触发 if (!user) → LoginPage：
+  // refresh 失败意味着 token 已被撤/过期/cookie 缺失，继续保留 user 会让业务请求持续 401。
   useEffect(() => {
-    refreshSession()
-      .then(setSession)
-      .catch(() => {})
+    refreshSessionShared()
+      .then((session) => {
+        if (session !== null) {
+          setSession(session)
+        } else {
+          useAuthStore.getState().clear()
+        }
+      })
+      .catch(() => useAuthStore.getState().clear())
       .finally(() => setReady(true))
   }, [setSession])
 
@@ -157,16 +151,15 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
   const clear = useAuthStore((state) => state.clear)
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const [siderCollapsed, setSiderCollapsed] = useState(false)
-  const { data: menuItems = [] } = useMenuTree()
+  const rolesKey = user?.roles.slice().sort().join('|') ?? 'none'
+  const { data: menuItems = [] } = useVisibleMenuTree(rolesKey)
 
   // 把后端平铺列表组装成前端导航树：ParentId 为 null 的是顶级，其余按 ParentId 归到 children。
   const navigation = useMemo(() => buildNavigation(menuItems), [menuItems])
 
-  const visibleNavigation = navigation.filter((item) => isMenuVisible(user, item))
-
   // 当前路径匹配到的含子项的顶级菜单 → 左侧边栏展示其子项。
-  const activeParent = findActiveParent(location.pathname, visibleNavigation)
-  const sidebarItems = activeParent?.children?.filter((child) => isMenuVisible(user, child))
+  const activeParent = findActiveParent(location.pathname, navigation)
+  const sidebarItems = activeParent?.children
 
   // 顶级菜单：有子项的点击后跳转到第一个子项（边栏随即展示全部子菜单），无子项的直接链接。
   // 不用 Antd Menu 是因为其水平溢出计算有 bug（会错误地把项折叠到溢出子菜单）。
@@ -203,7 +196,7 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
     <Layout className="app-shell">
       <Header className="app-header">
         <div className="brand"><h1>TigerRAG</h1></div>
-        <nav className="top-nav">{renderTopNav(visibleNavigation)}</nav>
+        <nav className="top-nav">{renderTopNav(navigation)}</nav>
         <div className="account-actions">
           <Dropdown menu={{ items: userMenuItems }} trigger={['click']}>
             <Tag className="user-tag">{userName?.charAt(0) ?? '?'}</Tag>
@@ -242,61 +235,49 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
             <Route
               path="/users"
               element={
-                <RequireRole roles={['Admin']}>
-                  <Suspense fallback={<Spin className="app-loading" />}>
-                    <UsersPage />
-                  </Suspense>
-                </RequireRole>
+                <Suspense fallback={<Spin className="app-loading" />}>
+                  <UsersPage />
+                </Suspense>
               }
             />
             <Route
               path="/roles"
               element={
-                <RequireRole roles={['Admin']}>
-                  <Suspense fallback={<Spin className="app-loading" />}>
-                    <RolesPage />
-                  </Suspense>
-                </RequireRole>
+                <Suspense fallback={<Spin className="app-loading" />}>
+                  <RolesPage />
+                </Suspense>
               }
             />
             <Route
               path="/menu-configs"
               element={
-                <RequireRole roles={['Admin']}>
-                  <Suspense fallback={<Spin className="app-loading" />}>
-                    <MenuManagementPage />
-                  </Suspense>
-                </RequireRole>
+                <Suspense fallback={<Spin className="app-loading" />}>
+                  <MenuManagementPage />
+                </Suspense>
               }
             />
             <Route
               path="/reports"
               element={
-                <RequireRole roles={['Admin', 'Auditor']}>
-                  <Suspense fallback={<Spin className="app-loading" />}>
-                    <ReportsPage />
-                  </Suspense>
-                </RequireRole>
+                <Suspense fallback={<Spin className="app-loading" />}>
+                  <ReportsPage />
+                </Suspense>
               }
             />
             <Route
               path="/logs"
               element={
-                <RequireRole roles={['Admin']}>
-                  <Suspense fallback={<Spin className="app-loading" />}>
-                    <LogsPage />
-                  </Suspense>
-                </RequireRole>
+                <Suspense fallback={<Spin className="app-loading" />}>
+                  <LogsPage />
+                </Suspense>
               }
             />
             <Route
               path="/audit"
               element={
-                <RequireRole roles={['Admin', 'Auditor']}>
-                  <Suspense fallback={<Spin className="app-loading" />}>
-                    <AuditPage />
-                  </Suspense>
-                </RequireRole>
+                <Suspense fallback={<Spin className="app-loading" />}>
+                  <AuditPage />
+                </Suspense>
               }
             />
             <Route path="*" element={<ForbiddenPage />} />

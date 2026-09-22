@@ -120,8 +120,9 @@ public sealed class UserRoleServiceAtomicityTests : IAsyncLifetime
         var menuConfigs = scope.ServiceProvider.GetRequiredService<IMenuConfigDal>();
         var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var roleAdmin = scope.ServiceProvider.GetRequiredService<IRoleAdmin>();
+        var roleRegistry = scope.ServiceProvider.GetRequiredService<IRoleRegistry>();
         return new UserRoleService(
-            users, credentials, sessions, menuConfigs, new ThrowingStampRotator(), uow, roleAdmin);
+            users, credentials, sessions, menuConfigs, new ThrowingStampRotator(), uow, roleAdmin, roleRegistry);
     }
 
     private async Task<Guid> SeedUserAsync()
@@ -207,6 +208,7 @@ public sealed class UserRoleServiceAtomicityTests : IAsyncLifetime
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.AddScoped<IMenuConfigDal, MenuConfigDal>();
         services.AddScoped<IRoleAdmin, RoleAdminDal>();
+        services.AddScoped<IRoleRegistry, RoleRegistry>();
         services.AddScoped<RoleAdminService>();
         services.AddScoped<IOperationAuditDal, OperationAuditDal>();
         services.AddScoped<IOperationAuditWriter, OperationAuditDal>();

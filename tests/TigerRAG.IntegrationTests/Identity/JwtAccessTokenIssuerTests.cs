@@ -15,7 +15,7 @@ public sealed class JwtAccessTokenIssuerTests
     public async Task IssueAsync_EmitsRoleClaimsForEachRole()
     {
         var issuer = CreateIssuer();
-        var user = new UserAccount(Guid.NewGuid(), "editor", [SystemRoles.Editor, SystemRoles.Viewer]);
+        var user = new UserAccount(Guid.NewGuid(), "editor", ["Editor", "Viewer"]);
 
         var token = await issuer.IssueAsync(user, CancellationToken.None);
 
@@ -26,7 +26,7 @@ public sealed class JwtAccessTokenIssuerTests
             .Where(claim => claim.Type == ClaimTypes.Role)
             .Select(claim => claim.Value)
             .ToList();
-        Assert.Equal([SystemRoles.Editor, SystemRoles.Viewer], roles);
+        Assert.Equal(["Editor", "Viewer"], roles);
 
         // 不再下发 permission claim：前端不得从 role 推导权限。
         Assert.DoesNotContain(parsed.Claims, claim => claim.Type == "permission");
@@ -37,7 +37,7 @@ public sealed class JwtAccessTokenIssuerTests
     {
         var issuer = CreateIssuer();
         var userId = Guid.NewGuid();
-        var user = new UserAccount(userId, "viewer", [SystemRoles.Viewer]);
+        var user = new UserAccount(userId, "viewer", ["Viewer"]);
 
         var token = await issuer.IssueAsync(user, CancellationToken.None);
 
@@ -50,7 +50,7 @@ public sealed class JwtAccessTokenIssuerTests
     public async Task IssueAsync_EmitsSecurityStampClaim()
     {
         var issuer = CreateIssuer();
-        var user = new UserAccount(Guid.NewGuid(), "viewer", [SystemRoles.Viewer]) { SecurityStamp = "stamp-xyz" };
+        var user = new UserAccount(Guid.NewGuid(), "viewer", ["Viewer"]) { SecurityStamp = "stamp-xyz" };
 
         var token = await issuer.IssueAsync(user, CancellationToken.None);
 
@@ -64,7 +64,7 @@ public sealed class JwtAccessTokenIssuerTests
     public async Task IssueAsync_EmitsUniqueJtiClaim()
     {
         var issuer = CreateIssuer();
-        var user = new UserAccount(Guid.NewGuid(), "viewer", [SystemRoles.Viewer]);
+        var user = new UserAccount(Guid.NewGuid(), "viewer", ["Viewer"]);
 
         var first = handler.ReadJwtToken((await issuer.IssueAsync(user, CancellationToken.None)).Value);
         var second = handler.ReadJwtToken((await issuer.IssueAsync(user, CancellationToken.None)).Value);

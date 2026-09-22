@@ -1,9 +1,8 @@
 namespace TigerRAG.Application.Roles;
 
-/// <summary>角色视图；<c>IsSystem</c> 由 Application 层基于 <see cref="TigerRAG.Application.Shared.SystemRoles.Admin"/> 计算（仅 Admin 不可删）；引用计数 + 关联菜单用于 UI 展示与删除闸。</summary>
+/// <summary>角色视图：含用户引用数与关联菜单名称列表；所有角色平等，无系统/自定义区分。</summary>
 public sealed record RoleDto(
     string Name,
-    bool IsSystem,
     int UserCount,
     int MenuCount,
     IReadOnlyList<string> MenuNames);
@@ -17,13 +16,13 @@ public sealed record RenameRoleRequest(string Name);
 /// <summary>角色管理 DAL 端口：AspNetRoles 写操作与受影响用户/映射查询。</summary>
 public interface IRoleAdmin
 {
-    /// <summary>列出全部角色；<c>IsSystem</c> 由 Application 层覆写（仅 Admin 返回 true）。</summary>
+    /// <summary>列出全部角色；引用计数与关联菜单由 Application 层覆盖。</summary>
     Task<IReadOnlyList<RoleDto>> ListAsync(CancellationToken cancellationToken);
 
     /// <summary>大小写不敏感的存在性校验（Identity NormalizedName）。</summary>
     Task<bool> NameExistsAsync(string name, CancellationToken cancellationToken);
 
-    /// <summary>新建角色，返回视图（<c>IsSystem=false</c>）。</summary>
+    /// <summary>新建角色，返回视图。</summary>
     Task<RoleDto> CreateRoleAsync(string name, CancellationToken cancellationToken);
 
     /// <summary>当前持有该角色的用户数。</summary>

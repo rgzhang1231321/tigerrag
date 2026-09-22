@@ -23,7 +23,6 @@ import {
 } from './useMenuConfig'
 import type { MenuConfigDto } from './menuApi'
 import { AVAILABLE_ICONS } from './menuIcons'
-import { ALL_ROLES } from '../auth/permissions'
 import { useRoles } from '../roles/useRoles'
 
 interface MenuForm {
@@ -129,9 +128,7 @@ export function MenuManagement() {
   const [expandedKeys, setExpandedKeys] = useState<string[]>([])
 
   const roleOptions = useMemo(
-    () => [...ALL_ROLES, ...allRoles.map((r) => r.name)].filter(
-      (role, index, array) => array.indexOf(role) === index,
-    ),
+    () => allRoles.map((r) => r.name),
     [allRoles],
   )
 

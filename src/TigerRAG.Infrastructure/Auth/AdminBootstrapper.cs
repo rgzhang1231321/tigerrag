@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Identity;
 using TigerRAG.Application.Auth;
-using TigerRAG.Application.Shared;
 using TigerRAG.Application.Users;
 using TigerRAG.Infrastructure.Dal;
 using TigerRAG.Infrastructure.Identity;
@@ -10,7 +9,9 @@ namespace TigerRAG.Infrastructure.Auth;
 /// <summary>首次部署管理员引导。只能由 <c>--bootstrap-admin</c> 命令触发，常规启动不会创建账号。</summary>
 public sealed class AdminBootstrapper(
     UserManager<AppUser> userManager,
-    IUserCredentialDal credentials) : IAdminBootstrapper
+    IUserCredentialDal credentials,
+    IMenuEndpointRegistry menuEndpoints,
+    IRoleEndpointGrantStore grants) : IAdminBootstrapper
 {
     public async Task BootstrapAsync(
         string userName,
@@ -22,7 +23,7 @@ public sealed class AdminBootstrapper(
         // 这样 bootstrap 管理员与通过 API 创建的用户共享同一套凭据格式。
         var created = await credentials.CreateAsync(
             userName,
-            [SystemRoles.Admin],
+            ["Admin"],
             cancellationToken);
 
         try
@@ -42,6 +43,25 @@ public sealed class AdminBootstrapper(
 
             throw;
         }
+
+        // 为 Admin 角色灌全部 [MenuEndpoint] 授权：删除 MenuEndpointAuthFilter 的 Admin bypass 后，Admin 默认全通靠这一步保证。
+        await EnsureAdminGrantsAsync(created.Id, cancellationToken);
+    }
+
+    /// <summary>对 Admin 角色灌全部已注册 endpoint 的授权；已存在的 (RoleName, EndpointKey) 行被 GrantAllInMenuAsync 幂等跳过。</summary>
+    private async Task EnsureAdminGrantsAsync(Guid bootstrapUserId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var endpoints = menuEndpoints.All;
+        if (endpoints.Count == 0) return;
+
+        var existing = await grants.ListByRoleAsync("Admin", cancellationToken);
+        var existingKeys = existing.Select(g => g.EndpointKey).ToHashSet(StringComparer.Ordinal);
+        var missing = endpoints.Where(ep => !existingKeys.Contains(ep.EndpointKey)).ToList();
+        if (missing.Count == 0) return;
+
+        // 菜单分组用 "__all__" 作为兜底桶；真实授权 UI 按真实 MenuKey 分组显示，这一桶仅作启动兜底导入。
+        await grants.GrantAllInMenuAsync("Admin", "__all__", missing, bootstrapUserId, cancellationToken);
     }
 
     // UserAccount 不暴露 salt；通过 FindByIdAsync 重新拉一次以读取 PasswordSalt 字段。
