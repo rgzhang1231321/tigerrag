@@ -20,7 +20,7 @@ public sealed class DocumentIndexingService(
         await documents.SaveAsync(document, cancellationToken);
 
         await using var file = await fileStorage.OpenReadAsync(document.StoragePath, cancellationToken);
-        var content = await parser.ParseAsync(file, cancellationToken);
+        var content = await parser.ParseAsync(file, null, cancellationToken);
         var chunks = chunker.Split(content);
         var vectors = await embeddingGenerator.GenerateAsync(chunks, cancellationToken);
 

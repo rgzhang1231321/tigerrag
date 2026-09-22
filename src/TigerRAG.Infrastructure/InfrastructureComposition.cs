@@ -24,8 +24,12 @@ using TigerRAG.Infrastructure.Dal;
 using TigerRAG.Infrastructure.Documents.Dal;
 using TigerRAG.Infrastructure.Identity;
 using TigerRAG.Infrastructure.Menus.Dal;
+using TigerRAG.Infrastructure.Indexing;
+using TigerRAG.Infrastructure.ObjectStorage;
 using TigerRAG.Infrastructure.OperationAudit.Dal;
+using TigerRAG.Infrastructure.Parsing;
 using TigerRAG.Infrastructure.Persistence;
+using TigerRAG.Infrastructure.Queue;
 using TigerRAG.Infrastructure.Roles.Dal;
 using TigerRAG.Infrastructure.Statistics.Dal;
 using TigerRAG.Infrastructure.Users;
@@ -95,6 +99,8 @@ public static class InfrastructureComposition
         services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(
             configuration.GetConnectionString("Redis")
                 ?? throw new InvalidOperationException("ConnectionStrings:Redis is required.")));
+        // 文档索引任务队列：Redis List（FIFO），键 doc:index:queue。
+        services.AddSingleton<IDocumentIndexQueue, RedisDocumentIndexQueue>();
         // JWT 按用户撤权的 Redis L1：键 auth:user:{guid}:stamp，TTL = AccessTokenMinutes*60 + ClockSkewSeconds。
         services.AddSingleton<IAuthRevocationCache, RedisAuthRevocationCache>();
         services.AddSingleton<IRoleEndpointGrantCache, RedisRoleEndpointGrantCache>();
@@ -109,6 +115,10 @@ public static class InfrastructureComposition
                 ?? throw new InvalidOperationException("Services:Qdrant is required."))));
         // MinIO 客户端按 Endpoint Scheme 自动决定是否启用 HTTPS，便于本地 docker-compose 直连。
         services.AddSingleton<IMinioClient>(_ => CreateMinioClient(configuration));
+        services.AddSingleton<IDocumentFileStorage, MinioFileStorage>();
+        services.AddSingleton<IDocumentParser, MimeDispatchingParser>();
+        services.AddSingleton<ITextChunker, FixedWindowChunker>();
+        services.AddSingleton<IEmbeddingGenerator, HashEmbeddingGenerator>();
 
         return services;
     }
