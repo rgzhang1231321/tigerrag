@@ -40,8 +40,13 @@ public sealed class MenuReferenceDal(TigerRagDbContext dbContext) : IRoleMenuRef
 
         return affected.Count;
     }
-
-    /// <summary>将所有 menu_config_record.Roles 数组中的 <paramref name="oldName"/> 替换为 <paramref name="newName"/>；返回被修改的菜单行数。</summary>
+    /// <summary>
+    /// 将所有 menu_config_record.Roles 数组中的 <paramref name="oldName"/> 替换为 <paramref name="newName"/>；返回。
+    /// </summary>
+    /// <param name="oldName"></param>
+    /// <param name="newName"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns>被修改的菜单行数</returns>
     public async Task<int> RenameRoleInAllMenusAsync(string oldName, string newName, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

@@ -113,8 +113,10 @@ public static class InfrastructureComposition
             return new MenuEndpointRegistry(provider.ActionDescriptors.Items);
         });
         services.AddSingleton(_ => new QdrantClient(new Uri(
-            configuration["Services:Qdrant"]
+            configuration["Services:Qdrant:Url"]
                 ?? throw new InvalidOperationException("Services:Qdrant is required."))));
+        services.Configure<VectorIndexOptions>(configuration.GetSection(VectorIndexOptions.DefaultSectionName));
+        services.AddSingleton<IVectorIndex, QdrantVectorIndex>();
         // MinIO 客户端按 Endpoint Scheme 自动决定是否启用 HTTPS，便于本地 docker-compose 直连。
         services.AddSingleton<IMinioClient>(_ => CreateMinioClient(configuration));
         services.Configure<ObjectStorageOptions>(configuration.GetSection(ObjectStorageOptions.DefaultSectionName));
@@ -127,6 +129,9 @@ public static class InfrastructureComposition
         return services;
     }
 
+    /// <summary>根据配置创建 MinIO 客户端。按 Endpoint Scheme 自动决定是否启用 HTTPS。</summary>
+    /// <param name="configuration">配置根。</param>
+    /// <returns>已构建的 MinIO 客户端实例。</returns>
     private static IMinioClient CreateMinioClient(IConfiguration configuration)
     {
         var endpoint = new Uri(configuration["Services:Minio:Endpoint"]

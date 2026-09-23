@@ -10,6 +10,10 @@ public sealed class HashEmbeddingGenerator : IEmbeddingGenerator
 {
     private const int Dimensions = 1536;
 
+    /// <summary>为每个文本块生成占位向量。不具备语义能力，仅用于验收流水线。</summary>
+    /// <param name="chunks">待生成向量的文本块列表。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>与文本块一一对应的向量列表。</returns>
     public Task<IReadOnlyList<float[]>> GenerateAsync(IReadOnlyList<TextChunk> chunks, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -22,6 +26,9 @@ public sealed class HashEmbeddingGenerator : IEmbeddingGenerator
         return Task.FromResult<IReadOnlyList<float[]>>(vectors);
     }
 
+    /// <summary>将文本哈希扩展到指定维度并 L2 归一化。通过多轮 SHA256 拼接填充缓冲区。</summary>
+    /// <param name="text">输入文本。</param>
+    /// <returns>归一化后的浮点向量。</returns>
     private static float[] Embed(string text)
     {
         var vector = new float[Dimensions];

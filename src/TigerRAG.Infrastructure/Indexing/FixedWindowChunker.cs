@@ -8,6 +8,9 @@ public sealed class FixedWindowChunker : ITextChunker
     private const int WindowSize = 500;
     private const int OverlapSize = 50;
 
+    /// <summary>将文本按固定窗口分块。优先在换行符处截断以贴近自然段落，块间保留重叠区域。</summary>
+    /// <param name="content">待分块的原始文本。</param>
+    /// <returns>分块结果列表；空文本返回空列表。</returns>
     public IReadOnlyList<TextChunk> Split(string content)
     {
         if (string.IsNullOrWhiteSpace(content))
