@@ -13,6 +13,8 @@ using TigerRAG.Application.ApiLogs;
 using TigerRAG.Application.Auth;
 using TigerRAG.Application.Documents;
 using TigerRAG.Application.Documents.Indexing;
+using TigerRAG.Application.Documents.Lifecycle;
+using TigerRAG.Application.KnowledgeBases;
 using TigerRAG.Application.Menus;
 using TigerRAG.Application.OperationAudit;
 using TigerRAG.Application.Roles;
@@ -35,6 +37,7 @@ using TigerRAG.Infrastructure.Queue;
 using TigerRAG.Infrastructure.Roles.Dal;
 using TigerRAG.Infrastructure.Statistics.Dal;
 using TigerRAG.Infrastructure.Users;
+using TigerRAG.Infrastructure.KnowledgeBases.Dal;
 
 namespace TigerRAG.Infrastructure;
 
@@ -75,6 +78,11 @@ public static class InfrastructureComposition
         services.AddScoped<IAdminBootstrapper, AdminBootstrapper>();
         services.AddScoped<IUserSecurityStampRotator, UserSecurityStampRotator>();
         services.AddScoped<IDocumentAccessDal, DocumentAccessDal>();
+        services.AddScoped<IDocumentQueryDal, DocumentQueryDal>();
+        services.AddScoped<IDocumentLifecycleDal, DocumentLifecycleDal>();
+        services.AddScoped<IDocumentRepository, DocumentRepository>();
+        services.AddScoped<DocumentService>();
+        services.AddScoped<DocumentIndexingService>();
         services.AddScoped<IMenuConfigDal, MenuConfigDal>();
         services.AddScoped<IRoleMenuReference, MenuReferenceDal>();
         services.AddScoped<IRoleAdmin, RoleAdminDal>();
@@ -90,6 +98,9 @@ public static class InfrastructureComposition
         services.AddScoped<ApiLogService>();
         services.AddScoped<IOperationAuditDal, OperationAuditDal>();
         services.AddScoped<IOperationAuditWriter, OperationAuditDal>();
+        services.AddScoped<IKbDal, KbDal>();
+        services.AddScoped<IUserLookup, UserLookup>();
+        services.AddScoped<KnowledgeBaseService>();
         // 角色-Endpoint 授权缓存 L1：键 auth:role:{role}:endpoints（Redis Set），TTL 默认 5 分钟，由装饰器在写路径失效。
         services.AddScoped<RoleEndpointGrantStore>();
         services.AddScoped<IRoleEndpointGrantStore>(sp => new CachedRoleEndpointGrantStore(

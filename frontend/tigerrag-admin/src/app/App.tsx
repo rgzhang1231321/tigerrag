@@ -31,6 +31,12 @@ const RolesPage = lazy(() =>
 const AuditPage = lazy(() =>
   import('../features/audit/AuditPage').then((module) => ({ default: module.AuditPage })),
 )
+const KnowledgeBasePage = lazy(() =>
+  import('../features/knowledge-base/KnowledgeBasePage').then((module) => ({ default: module.KnowledgeBasePage })),
+)
+const DocumentPage = lazy(() =>
+  import('../features/document/DocumentPage').then((module) => ({ default: module.DocumentPage })),
+)
 
 const LoginPage = lazy(() => import('../features/auth/LoginPage'))
 const MenuManagementPage = lazy(() =>
@@ -229,8 +235,22 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
         <Content className="app-content">
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/knowledge-bases" element={<ModulePage title="知识库" />} />
-            <Route path="/documents" element={<ModulePage title="文档管理" />} />
+            <Route
+              path="/knowledge-bases"
+              element={
+                <Suspense fallback={<Spin className="app-loading" />}>
+                  <KnowledgeBasePage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/documents"
+              element={
+                <Suspense fallback={<Spin className="app-loading" />}>
+                  <DocumentPage />
+                </Suspense>
+              }
+            />
             <Route path="/chat" element={<ModulePage title="问答工作台" />} />
             <Route
               path="/users"

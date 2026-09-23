@@ -7,60 +7,184 @@ using TigerRAG.Application.Documents;
 
 namespace TigerRAG.Api.Controllers.Documents;
 
-/// <summary>文档管理端点：详情、上传、列表、删除、权限编辑。</summary>
+/// <summary>文档管理端点：列表、上传、详情、删除、重索引。ACL 替换由 <see cref="DocumentPermissionsController"/> 单独承载。</summary>
 [ApiController]
 [Route("api/documents")]
-public sealed class DocumentsController(DocumentAccessService documentAccess) : ControllerBase
+public sealed class DocumentsController(
+    DocumentService service) : ControllerBase
 {
-    /// <summary>获取指定文档；当前骨架阶段尚未实现具体业务逻辑。</summary>
-    /// <param name="documentId">需要查询的文档标识。</param>
-    /// <returns>当前返回业务码 50100，表示文档服务尚未实现。</returns>
-    [HttpGet("{documentId:guid}")]
-    [MenuEndpoint("documents", "documents.get", "获取文档详情")]
-    public IActionResult GetDocument(Guid documentId) => Ok(ApiResponse<object?>.Failure(
-        FlagStatesOption.NotImplemented,
-        "文档服务尚未实现"));
+    private static readonly HashSet<string> AllowedMimeTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/markdown",
+        "text/plain",
+    };
 
-    /// <summary>替换指定文档的用户和角色访问权限。</summary>
-    /// <param name="documentId">需要修改权限的文档标识。</param>
-    /// <param name="request">允许访问文档的用户标识和角色集合。</param>
-    /// <param name="cancellationToken">用于取消当前请求的令牌。</param>
-    /// <returns>更新成功时返回空数据；无权或文档不存在时返回对应非零业务码。</returns>
-    [HttpPost("{documentId:guid}/permissions")]
-    [MenuEndpoint("documents", "documents.permissions.replace", "替换文档权限")]
-    public async Task<IActionResult> ReplacePermissions(
-        Guid documentId,
-        ReplaceDocumentPermissionsRequest request,
+    private const long MaxFileSizeBytes = 30L * 1024 * 1024;
+
+    /// <summary>查询指定 KB 下当前用户可见的文档列表（ACL 过滤）。</summary>
+    [HttpPost("list")]
+    [MenuEndpoint("documents", "documents.list", "获取文档列表")]
+    public async Task<ActionResult<ApiResponse<DocumentListPage>>> List(
+        [FromBody] ListDocumentsRequest request,
         CancellationToken cancellationToken)
     {
-        if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId))
+        if (!HttpContext.TryGetActor(out var actor) || actor is null)
         {
             return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "用户身份无效"));
         }
 
+        var roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray();
         var isAdmin = User.IsInRole("Admin");
         try
         {
-            await documentAccess.ReplacePermissionsAsync(
-                documentId,
-                actorId,
-                isAdmin,
-                request.UserIds,
-                request.Roles,
-                cancellationToken);
+            var page = await service.ListAsync(request.KbId, actor, roles, isAdmin, cancellationToken);
+            return Ok(ApiResponse.Success(page));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, ex.Message));
+        }
+    }
+
+    /// <summary>上传文档到指定 KB（multipart/form-data：字段 <c>kbId</c>、<c>file</c>）。</summary>
+    [HttpPost("upload")]
+    [MenuEndpoint("documents", "documents.upload", "上传文档")]
+    [RequestSizeLimit(MaxFileSizeBytes + 1024 * 1024)]
+    public async Task<ActionResult<ApiResponse<DocumentDto>>> Upload(
+        [FromForm] Guid kbId,
+        [FromForm] IFormFile file,
+        CancellationToken cancellationToken)
+    {
+        if (!HttpContext.TryGetActor(out var actor) || actor is null)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "用户身份无效"));
+        }
+
+        if (file is null || file.Length == 0)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation, "文件不能为空。"));
+        }
+        if (file.Length > MaxFileSizeBytes)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation,
+                $"文件大小 {file.Length} 字节超过 {MaxFileSizeBytes} 字节上限。"));
+        }
+        var mimeType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
+        if (!AllowedMimeTypes.Contains(mimeType))
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation,
+                $"不支持的 MIME 类型 {mimeType}。"));
+        }
+
+        await using var stream = file.OpenReadStream();
+        var upload = new UploadDocumentRequest(kbId, file.FileName, mimeType, file.Length, stream);
+        try
+        {
+            var doc = await service.UploadAsync(upload, actor, cancellationToken);
+            return Ok(ApiResponse.Success(doc));
+        }
+        catch (ArgumentException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation, ex.Message));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, ex.Message));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Forbidden, ex.Message));
+        }
+    }
+
+    /// <summary>获取文档详情；非 Admin 必须在 ACL 可见集合内。</summary>
+    [HttpPost("{documentId:guid}")]
+    [MenuEndpoint("documents", "documents.get", "获取文档详情")]
+    public async Task<ActionResult<ApiResponse<DocumentDto>>> Get(Guid documentId, CancellationToken cancellationToken)
+    {
+        if (!HttpContext.TryGetActor(out var actor) || actor is null)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "用户身份无效"));
+        }
+
+        var roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray();
+        var isAdmin = User.IsInRole("Admin");
+        try
+        {
+            var doc = await service.GetAsync(documentId, actor, roles, isAdmin, cancellationToken);
+            return Ok(ApiResponse.Success(doc));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, ex.Message));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Forbidden, ex.Message));
+        }
+    }
+
+    /// <summary>删除文档；级联清理 chunks/permissions/向量/MinIO。</summary>
+    [HttpPost("{documentId:guid}/delete")]
+    [MenuEndpoint("documents", "documents.delete", "删除文档")]
+    public async Task<ActionResult<ApiResponse<object?>>> Delete(Guid documentId, CancellationToken cancellationToken)
+    {
+        if (!HttpContext.TryGetActor(out var actor) || actor is null)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "用户身份无效"));
+        }
+
+        var roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray();
+        var isAdmin = User.IsInRole("Admin");
+        try
+        {
+            await service.DeleteAsync(documentId, actor, roles, isAdmin, cancellationToken);
             return Ok(ApiResponse<object?>.Success(null));
         }
-        catch (ArgumentException error)
+        catch (KeyNotFoundException ex)
         {
-            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation, error.Message));
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, ex.Message));
         }
-        catch (UnauthorizedAccessException error)
+        catch (UnauthorizedAccessException ex)
         {
-            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Forbidden, error.Message));
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Forbidden, ex.Message));
         }
-        catch (KeyNotFoundException)
+        catch (InvalidOperationException ex)
         {
-            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, "文档不存在"));
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Conflict, ex.Message));
+        }
+    }
+
+    /// <summary>单篇重索引：Processing 时拒绝；否则 Status 重置为 Pending 并入队。</summary>
+    [HttpPost("{documentId:guid}/reindex")]
+    [MenuEndpoint("documents", "documents.reindex", "重新索引文档")]
+    public async Task<ActionResult<ApiResponse<object?>>> Reindex(Guid documentId, CancellationToken cancellationToken)
+    {
+        if (!HttpContext.TryGetActor(out var actor) || actor is null)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "用户身份无效"));
+        }
+
+        var roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray();
+        var isAdmin = User.IsInRole("Admin");
+        try
+        {
+            await service.ReindexAsync(documentId, actor, roles, isAdmin, cancellationToken);
+            return Ok(ApiResponse<object?>.Success(null));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, ex.Message));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Forbidden, ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Conflict, ex.Message));
         }
     }
 }

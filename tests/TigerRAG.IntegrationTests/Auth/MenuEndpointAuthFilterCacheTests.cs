@@ -12,6 +12,7 @@ using TigerRAG.Application.Shared;
 using TigerRAG.Application.Users;
 using TigerRAG.Infrastructure.Persistence;
 using TigerRAG.Infrastructure.Persistence.Entities.RoleEndpointGrants;
+using TigerRAG.IntegrationTests.Infrastructure;
 
 namespace TigerRAG.IntegrationTests.Api;
 
@@ -27,10 +28,13 @@ public sealed class MenuEndpointAuthFilterCacheTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        await TestDatabaseFixture.EnsureTestDatabaseAsync();
         _factory = BuildFactory();
         _client = _factory.CreateClient();
 
-        // 启动期 bootstrap 不灌 grant；清表避免历史测试残留造成 PK 冲突。
+        await TestDatabaseFixture.EnsureSchemaAsync(_factory.Services);
+
+        // 清空授权数据，避免历史测试残留造成 PK 冲突。
         await using var scope = _factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TigerRagDbContext>();
         db.RoleEndpointGrants.RemoveRange(db.RoleEndpointGrants);
@@ -57,6 +61,7 @@ public sealed class MenuEndpointAuthFilterCacheTests : IAsyncLifetime
         {
             builder.UseSetting("Jwt:SigningKey", "test-only-signing-key-with-at-least-32-characters");
             builder.UseSetting("ConnectionStrings:Redis", "localhost:6379,abortConnect=false,connectTimeout=100,syncTimeout=100");
+            builder.UseSetting("ConnectionStrings:PostgreSql", TestDatabaseFixture.TestConnectionString);
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IUserDal>();

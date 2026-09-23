@@ -12,6 +12,15 @@ public sealed class KnowledgeBase
         CreatedAt = createdAt;
     }
 
+    private KnowledgeBase(string name, string? description, Guid ownerId, DateTimeOffset createdAt, Guid id)
+    {
+        Id = id;
+        Name = name;
+        Description = description;
+        OwnerId = ownerId;
+        CreatedAt = createdAt;
+    }
+
     public Guid Id { get; }
     public string Name { get; private set; }
     public string? Description { get; private set; }
@@ -30,6 +39,17 @@ public sealed class KnowledgeBase
             throw new ArgumentException("名称长度不能超过 200。", nameof(name));
         }
         return new KnowledgeBase(name, description, ownerId, createdAt);
+    }
+
+    /// <summary>从持久化重建；跳过业务不变量校验（数据已过校验入库）。</summary>
+    internal static KnowledgeBase Reconstitute(
+        Guid id,
+        string name,
+        string? description,
+        Guid ownerId,
+        DateTimeOffset createdAt)
+    {
+        return new KnowledgeBase(name, description, ownerId, createdAt, id);
     }
 
     /// <summary>重命名；要求新名称非空且不超过 200 字，且与当前名称不同。</summary>

@@ -54,8 +54,11 @@ export async function http<T>(path: string, options: HttpOptions = {}): Promise<
     credentials: 'include',
     headers: buildHeaders(token, headers, body),
   }
-  if (body !== undefined) {
+  // FormData 由浏览器自动设置 Content-Type（含 boundary）；不可手动 JSON.stringify。
+  if (body !== undefined && !(body instanceof FormData)) {
     requestInit.body = JSON.stringify(body)
+  } else if (body instanceof FormData) {
+    requestInit.body = body
   }
 
   try {
@@ -93,7 +96,10 @@ function buildHeaders(
   if (token !== null) {
     headers['Authorization'] = `Bearer ${token}`
   }
-  if (body !== undefined && headers['Content-Type'] === undefined) {
+  // FormData：Content-Type 必须由浏览器补 boundary，强制覆盖避免 JSON 默认头干扰。
+  if (body instanceof FormData) {
+    delete headers['Content-Type']
+  } else if (body !== undefined && headers['Content-Type'] === undefined) {
     headers['Content-Type'] = 'application/json'
   }
   return headers
@@ -197,4 +203,6 @@ export const queryKeys = {
   users: ['users'] as const,
   roles: ['roles'] as const,
   roleEndpoints: (role: string) => ['role-endpoints', role] as const,
+  knowledgeBases: ['knowledge-bases'] as const,
+  documents: (kbId: string | null) => ['documents', kbId ?? 'all'] as const,
 }

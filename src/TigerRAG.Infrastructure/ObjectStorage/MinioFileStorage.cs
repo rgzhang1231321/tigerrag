@@ -22,17 +22,19 @@ public sealed class MinioFileStorage : IDocumentFileStorage
     public Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        // MinIO 7.0 用回调流替代了直接返回；用 TaskCompletionSource 桥接到 Task<Stream>。
+        // MinIO 回调流仅在回调期间有效，需在回调内复制到 MemoryStream 以确保调用方可读。
         var tcs = new TaskCompletionSource<Stream>(TaskCreationOptions.RunContinuationsAsynchronously);
         var args = new GetObjectArgs()
             .WithBucket(_bucket)
             .WithObject(path)
             .WithCallbackStream((stream, cancellationToken) =>
             {
-                tcs.TrySetResult(stream);
+                var ms = new MemoryStream();
+                stream.CopyTo(ms);
+                ms.Position = 0;
+                tcs.TrySetResult(ms);
                 return Task.CompletedTask;
             });
-        // 同步启动，调用方 await tcs.Task 拿到流；MinIO 回调内会填充。
         _ = _client.GetObjectAsync(args, cancellationToken);
         return tcs.Task;
     }

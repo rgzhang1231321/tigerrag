@@ -9,7 +9,7 @@ using TigerRAG.Infrastructure.Persistence;
 namespace TigerRAG.IntegrationTests.Infrastructure;
 
 /// <summary>角色-Endpoint 授权 DAL 行为：授权/撤销/批量/查询。需要在本地 Postgres 跑。</summary>
-[Collection(nameof(PostgresCollection))]
+[Collection("RoleEndpointGrantIntegration")]
 public sealed class RoleEndpointGrantStoreTests : IAsyncLifetime
 {
     private const string TestDatabaseName = "tigerrag_grant_test";

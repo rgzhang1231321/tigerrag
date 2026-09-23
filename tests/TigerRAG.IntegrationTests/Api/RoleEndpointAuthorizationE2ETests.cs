@@ -13,6 +13,7 @@ using TigerRAG.Application.Shared;
 using TigerRAG.Application.Users;
 using TigerRAG.Infrastructure.Persistence;
 using TigerRAG.Infrastructure.Persistence.Entities.RoleEndpointGrants;
+using TigerRAG.IntegrationTests.Infrastructure;
 
 namespace TigerRAG.IntegrationTests.Api;
 
@@ -25,10 +26,13 @@ public sealed class RoleEndpointAuthorizationE2ETests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        await TestDatabaseFixture.EnsureTestDatabaseAsync();
         _factory = BuildFactory();
         _client = _factory.CreateClient();
 
-        // 启动期 bootstrap 已灌全量 grant 给 Admin；此处清掉，测试中按需添加。
+        await TestDatabaseFixture.EnsureSchemaAsync(_factory.Services);
+
+        // 清空授权数据，测试中按需添加。
         await using var scope = _factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TigerRagDbContext>();
         db.RoleEndpointGrants.RemoveRange(db.RoleEndpointGrants);
@@ -55,6 +59,7 @@ public sealed class RoleEndpointAuthorizationE2ETests : IAsyncLifetime
         {
             builder.UseSetting("Jwt:SigningKey", "test-only-signing-key-with-at-least-32-characters");
             builder.UseSetting("ConnectionStrings:Redis", "localhost:6379,abortConnect=false,connectTimeout=100,syncTimeout=100");
+            builder.UseSetting("ConnectionStrings:PostgreSql", TestDatabaseFixture.TestConnectionString);
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IUserDal>();

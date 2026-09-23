@@ -14,6 +14,24 @@ public sealed class Document
         Status = DocumentStatus.Pending;
     }
 
+    private Document(
+        Guid id,
+        Guid knowledgeBaseId,
+        string fileName,
+        string storagePath,
+        DocumentStatus status,
+        int chunkCount,
+        string? failureReason)
+    {
+        Id = id;
+        KnowledgeBaseId = knowledgeBaseId;
+        FileName = fileName;
+        StoragePath = storagePath;
+        Status = status;
+        ChunkCount = chunkCount;
+        FailureReason = failureReason;
+    }
+
     public Guid Id { get; }
     public Guid KnowledgeBaseId { get; }
     public string FileName { get; }
@@ -25,6 +43,19 @@ public sealed class Document
     /// <summary>工厂方法：创建一个 Pending 状态的文档。</summary>
     public static Document Create(Guid knowledgeBaseId, string fileName, string storagePath) =>
         new(knowledgeBaseId, fileName, storagePath);
+
+    /// <summary>从持久化重建；跳过业务不变量校验（数据已过校验入库）。</summary>
+    internal static Document Reconstitute(
+        Guid id,
+        Guid knowledgeBaseId,
+        string fileName,
+        string storagePath,
+        DocumentStatus status,
+        int chunkCount,
+        string? failureReason)
+    {
+        return new Document(id, knowledgeBaseId, fileName, storagePath, status, chunkCount, failureReason);
+    }
 
     /// <summary>Pending → Processing；Worker 领取任务时调用。</summary>
     public void StartProcessing()

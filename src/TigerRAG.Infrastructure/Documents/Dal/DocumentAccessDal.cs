@@ -120,6 +120,7 @@ public sealed class DocumentAccessDal(
             .Select(principal => Permission(documentId, principal.Item1, principal.Item2)));
     }
 
+    /// <summary>构造一条 document_permission_record 行；供 ReplacePermissions 批量插入。</summary>
     private static document_permission_record Permission(
         Guid documentId,
         PermissionPrincipalType principalType,
