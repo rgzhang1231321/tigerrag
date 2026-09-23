@@ -144,11 +144,12 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
             entity.Property(value => value.Key).HasMaxLength(100);
             entity.Property(value => value.Label).HasMaxLength(100);
             entity.Property(value => value.Icon).HasMaxLength(100);
-            entity.Property(value => value.Roles)
+            var rolesBuilder = entity.Property(value => value.Roles)
                 .HasConversion(
                     v => string.Join(",", v ?? Array.Empty<string>()),
                     v => (v ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
                 .HasMaxLength(500);
+            rolesBuilder.Metadata.SetValueComparer(new ArrayValueComparer<string>());
             entity.HasIndex(value => value.Key).IsUnique();
             entity.HasOne<menu_config_record>().WithMany().HasForeignKey(value => value.ParentId).OnDelete(DeleteBehavior.Restrict);
         });
