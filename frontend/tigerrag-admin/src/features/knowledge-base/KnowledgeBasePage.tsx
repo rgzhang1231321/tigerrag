@@ -218,7 +218,7 @@ export function KnowledgeBasePage() {
         />
         <Button onClick={() => void refetch()}>刷新</Button>
         <div style={{ flex: 1 }} />
-        <Button type="primary" onClick={() => setMode('create')}>
+        <Button style={{ margin: "24px 0" }} type="primary" onClick={() => setMode('create')}>
           新建知识库
         </Button>
       </div>
