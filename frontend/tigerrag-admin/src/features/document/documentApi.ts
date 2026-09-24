@@ -52,7 +52,31 @@ export function deleteDoc(id: string): Promise<null> {
   return http<null>(`/api/documents/${encodeURIComponent(id)}/delete`, { method: 'POST' })
 }
 
+/// <summary>批量删除文档。</summary>
+export function batchDeleteDocs(ids: string[]): Promise<number> {
+  return http<number>('/api/documents/batch-delete', {
+    method: 'POST',
+    body: { ids },
+  })
+}
+
 /// <summary>单篇重索引：Processing 时拒绝；否则 Status 重置为 Pending 并入队。</summary>
 export function reindexDoc(id: string): Promise<null> {
   return http<null>(`/api/documents/${encodeURIComponent(id)}/reindex`, { method: 'POST' })
+}
+
+/// <summary>文档预览内容 DTO：与后端 DocumentContentDto 一一对应。</summary>
+export interface DocumentContentDto {
+  documentId: string
+  fileName: string
+  mimeType: string
+  content: string
+  size: number
+  truncated: boolean
+  maxPreviewBytes: number | null
+}
+
+/// <summary>获取文档预览内容（当前仅支持 text/plain）。</summary>
+export function getDocContent(id: string): Promise<DocumentContentDto> {
+  return http<DocumentContentDto>(`/api/documents/${encodeURIComponent(id)}/content`, { method: 'POST' })
 }

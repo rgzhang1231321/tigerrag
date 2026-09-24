@@ -33,3 +33,13 @@ public sealed record DocumentListPage(
     int Page,
     int PageSize,
     int Total);
+
+/// <summary>文档预览内容：当前仅支持 text/plain。</summary>
+public sealed record DocumentContentDto(
+    Guid DocumentId,
+    string FileName,
+    string MimeType,
+    string Content,
+    long Size,
+    bool Truncated,
+    int? MaxPreviewBytes);

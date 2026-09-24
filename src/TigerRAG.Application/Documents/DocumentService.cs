@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Extensions.Logging;
 using TigerRAG.Application.Documents.Indexing;
 using TigerRAG.Application.Documents.Lifecycle;
@@ -217,6 +218,142 @@ public sealed class DocumentService(
             try { await fileStorage.DeleteAsync(storagePath, CancellationToken.None); }
             catch (Exception ex) { logger.LogWarning(ex, "文档 {DocId} 删除后清理对象存储 {Path} 失败。", id, storagePath); }
         }
+    }
+
+    /// <summary>批量删除文档：逐个校验权限并级联清理；事务内执行，任一失败整体回滚。</summary>
+    public async Task<int> BatchDeleteAsync(
+        IReadOnlyList<Guid> ids,
+        ActorContext actor,
+        IReadOnlyCollection<string> roles,
+        bool isAdmin,
+        CancellationToken cancellationToken)
+    {
+        if (ids.Count == 0)
+        {
+            throw new ArgumentException("未选择任何文档。", nameof(ids));
+        }
+
+        var storagePaths = new List<string>();
+        var deletedNames = new List<string>();
+
+        await unitOfWork.ExecuteAsync(async ct =>
+        {
+            foreach (var id in ids)
+            {
+                var document = await documentQueryDal.FindSummaryAsync(id, ct)
+                    ?? throw new KeyNotFoundException($"文档 {id} 不存在。");
+
+                if (!isAdmin)
+                {
+                    var scope = await documentAccess.GetScopeAsync(actor.Id, roles, ct);
+                    var isOwner = await IsKbOwnerAsync(document.KbId, actor.Id, ct);
+                    if (!isOwner && (!scope.AllDocuments && !scope.DocumentIds.Contains(id)))
+                    {
+                        throw new UnauthorizedAccessException($"无权限删除文档「{document.FileName}」。");
+                    }
+                }
+
+                if (document.Status == DocumentStatus.Processing)
+                {
+                    throw new InvalidOperationException($"文档「{document.FileName}」正在索引中，请等待完成后重试。");
+                }
+
+                await documentLifecycleDal.DeleteChunksAsync(id, ct);
+                await documentLifecycleDal.DeletePermissionsAsync(id, ct);
+                await documentLifecycleDal.DeleteAsync(id, ct);
+                if (!string.IsNullOrEmpty(document.StoragePath))
+                {
+                    storagePaths.Add(document.StoragePath);
+                }
+                deletedNames.Add(document.FileName);
+            }
+
+            await audit.RecordAsync(new OperationAuditEntry(
+                actor.Id, actor.Name,
+                OperationAuditActions.DocumentBatchDelete,
+                "document", string.Join(",", ids),
+                string.Join(", ", deletedNames)), ct);
+        }, cancellationToken);
+
+        foreach (var id in ids)
+        {
+            try { await vectorIndex.DeleteDocumentAsync(id, cancellationToken); }
+            catch (Exception ex) { logger.LogWarning(ex, "文档 {DocId} 删除后清理向量失败。", id); }
+        }
+
+        foreach (var path in storagePaths)
+        {
+            try { await fileStorage.DeleteAsync(path, CancellationToken.None); }
+            catch (Exception ex) { logger.LogWarning(ex, "文档删除后清理对象存储 {Path} 失败。", path); }
+        }
+
+        return ids.Count;
+    }
+
+    /// <summary>预览内容字节上限（1MB）；超出则截断并标记 Truncated。</summary>
+    private const int MaxPreviewBytes = 1024 * 1024;
+
+    /// <summary>当前支持预览的 MIME 白名单；仅 text/plain。</summary>
+    private static readonly IReadOnlySet<string> PreviewableMimeTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "text/plain",
+    };
+
+    /// <summary>获取文档预览内容：校验权限 → 校验 MIME → 读取对象存储 → UTF-8 解码。超出 MaxPreviewBytes 时截断并标记 Truncated=true。</summary>
+    public async Task<DocumentContentDto> GetContentAsync(
+        Guid documentId,
+        ActorContext actor,
+        IReadOnlyCollection<string> roles,
+        bool isAdmin,
+        CancellationToken cancellationToken)
+    {
+        var summary = await documentQueryDal.FindSummaryAsync(documentId, cancellationToken)
+            ?? throw new KeyNotFoundException($"文档 {documentId} 不存在。");
+
+        if (!isAdmin)
+        {
+            var scope = await documentAccess.GetScopeAsync(actor.Id, roles, cancellationToken);
+            if (!scope.AllDocuments && !scope.DocumentIds.Contains(documentId))
+            {
+                throw new UnauthorizedAccessException("无权限访问此文档。");
+            }
+        }
+
+        if (summary.MimeType is null || !PreviewableMimeTypes.Contains(summary.MimeType))
+        {
+            throw new InvalidOperationException($"该文件类型（{summary.MimeType ?? "未知"}）暂不支持预览。");
+        }
+
+        var truncated = false;
+        string content;
+        await using var stream = await fileStorage.OpenReadAsync(summary.StoragePath, cancellationToken);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        if (summary.Size <= MaxPreviewBytes)
+        {
+            content = await reader.ReadToEndAsync(cancellationToken);
+        }
+        else
+        {
+            var buffer = new char[MaxPreviewBytes];
+            var totalRead = 0;
+            while (totalRead < MaxPreviewBytes)
+            {
+                var read = await reader.ReadAsync(buffer.AsMemory(totalRead, MaxPreviewBytes - totalRead), cancellationToken);
+                if (read == 0) break;
+                totalRead += read;
+            }
+            content = new string(buffer, 0, totalRead);
+            truncated = true;
+        }
+
+        return new DocumentContentDto(
+            summary.Id,
+            summary.FileName,
+            summary.MimeType,
+            content,
+            summary.Size,
+            truncated,
+            truncated ? MaxPreviewBytes : null);
     }
 
     /// <summary>单篇重索引：Processing 时拒绝；否则 Status 重置为 Pending 并入队。</summary>

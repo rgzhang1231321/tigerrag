@@ -206,6 +206,78 @@ public sealed class KnowledgeBaseService(
         }
     }
 
+    /// <summary>批量删除知识库：逐个校验权限并级联清理；事务内执行，任一失败整体回滚。</summary>
+    public async Task<int> BatchDeleteAsync(
+        IReadOnlyList<Guid> ids,
+        ActorContext actor,
+        bool isAdmin,
+        CancellationToken cancellationToken)
+    {
+        if (ids.Count == 0)
+        {
+            throw new ArgumentException("未选择任何知识库。", nameof(ids));
+        }
+
+        var storagePaths = new List<string>();
+        var allDocumentIds = new List<Guid>();
+        var deletedNames = new List<string>();
+
+        await unitOfWork.ExecuteAsync(async ct =>
+        {
+            foreach (var id in ids)
+            {
+                var knowledgeBase = await kbDal.FindAsync(id, ct)
+                    ?? throw new KeyNotFoundException($"知识库 {id} 不存在。");
+
+                if (!isAdmin && knowledgeBase.OwnerId != actor.Id)
+                {
+                    throw new UnauthorizedAccessException($"无权限删除知识库「{knowledgeBase.Name}」。");
+                }
+
+                var documentIds = await kbDal.ListDocumentIdsAsync(id, ct);
+                foreach (var docId in documentIds)
+                {
+                    var document = await documentQueryDal.FindSummaryAsync(docId, ct);
+                    if (document is { Status: DocumentStatus.Processing })
+                    {
+                        throw new InvalidOperationException($"文档「{document.FileName}」正在索引中，请等待完成后重试。");
+                    }
+                    await documentLifecycleDal.DeleteChunksAsync(docId, ct);
+                    await documentLifecycleDal.DeletePermissionsAsync(docId, ct);
+                    await documentLifecycleDal.DeleteAsync(docId, ct);
+                    if (document is { } doc && !string.IsNullOrEmpty(doc.StoragePath))
+                    {
+                        storagePaths.Add(doc.StoragePath);
+                    }
+                }
+                allDocumentIds.AddRange(documentIds);
+
+                await kbDal.DeleteAsync(id, ct);
+                deletedNames.Add(knowledgeBase.Name);
+            }
+
+            await audit.RecordAsync(new OperationAuditEntry(
+                actor.Id, actor.Name,
+                OperationAuditActions.KbBatchDelete,
+                "knowledgeBase", string.Join(",", ids),
+                string.Join(", ", deletedNames)), ct);
+        }, cancellationToken);
+
+        foreach (var docId in allDocumentIds)
+        {
+            try { await vectorIndex.DeleteDocumentAsync(docId, CancellationToken.None); }
+            catch (Exception ex) { logger.LogWarning(ex, "知识库删除后清理向量 {DocId} 失败。", docId); }
+        }
+
+        foreach (var path in storagePaths)
+        {
+            try { await fileStorage.DeleteAsync(path, CancellationToken.None); }
+            catch (Exception ex) { logger.LogWarning(ex, "知识库删除后清理对象存储 {Path} 失败。", path); }
+        }
+
+        return ids.Count;
+    }
+
     /// <summary>重索引整个 KB：事务内把非 Processing 文档批量置为 Pending + 审计；事务外逐个入队（失败仅日志）。</summary>
     public async Task ReindexAsync(
         Guid id,

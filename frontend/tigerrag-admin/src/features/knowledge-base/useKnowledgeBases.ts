@@ -1,6 +1,6 @@
 import { queryKeys } from '../../app/http'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createKb, deleteKb, listKbs, reindexKb, updateKb } from './knowledgeBaseApi'
+import { createKb, deleteKb, batchDeleteKbs, listKbs, reindexKb, updateKb } from './knowledgeBaseApi'
 import type { KnowledgeBaseDto } from './knowledgeBaseApi'
 
 /// <summary>列出当前用户可见的知识库。</summary>
@@ -64,6 +64,19 @@ export function useReindexKb() {
   return useMutation({
     mutationFn: async (id: string): Promise<null> => {
       return reindexKb(id)
+    },
+  })
+}
+
+/// <summary>批量删除知识库；成功后让知识库列表缓存失效。</summary>
+export function useBatchDeleteKbs() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (ids: string[]): Promise<number> => {
+      return batchDeleteKbs(ids)
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeBases })
     },
   })
 }

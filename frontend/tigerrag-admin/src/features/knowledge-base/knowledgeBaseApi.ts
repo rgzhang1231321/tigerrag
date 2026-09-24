@@ -42,6 +42,14 @@ export function deleteKb(id: string): Promise<null> {
   return http<null>(`/api/knowledge-bases/${encodeURIComponent(id)}/delete`, { method: 'POST' })
 }
 
+/// <summary>批量删除知识库。</summary>
+export function batchDeleteKbs(ids: string[]): Promise<number> {
+  return http<number>('/api/knowledge-bases/batch-delete', {
+    method: 'POST',
+    body: { ids },
+  })
+}
+
 /// <summary>把 KB 下全部非 Processing 文档重置为 Pending 并重新入队。</summary>
 export function reindexKb(id: string): Promise<null> {
   return http<null>(`/api/knowledge-bases/${encodeURIComponent(id)}/reindex`, { method: 'POST' })

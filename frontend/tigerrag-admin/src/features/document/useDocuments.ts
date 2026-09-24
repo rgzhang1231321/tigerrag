@@ -1,6 +1,6 @@
 import { queryKeys } from '../../app/http'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { deleteDoc, listDocs, reindexDoc, uploadDoc } from './documentApi'
+import { deleteDoc, batchDeleteDocs, listDocs, reindexDoc, uploadDoc, getDocContent } from './documentApi'
 import type { DocumentDto, DocumentListPage } from './documentApi'
 
 /// <summary>列出指定 KB 下当前用户可见的文档；按 ACL 过滤。</summary>
@@ -45,5 +45,28 @@ export function useReindexDocument() {
     mutationFn: async (id: string): Promise<null> => {
       return reindexDoc(id)
     },
+  })
+}
+
+/// <summary>批量删除文档；成功后让所有文档列表缓存失效。</summary>
+export function useBatchDeleteDocuments() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (ids: string[]): Promise<number> => {
+      return batchDeleteDocs(ids)
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['documents'] })
+    },
+  })
+}
+
+/// <summary>文档预览内容查询：仅在用户点击预览时启用。</summary>
+export function useDocumentContent(id: string | null) {
+  return useQuery({
+    queryKey: ['document-content', id],
+    queryFn: () => getDocContent(id!),
+    enabled: !!id,
+    retry: 1,
   })
 }

@@ -408,6 +408,17 @@ body {
 .preview-content-placeholder {
   margin-top: 16px;
 }
+.preview-text-content {
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: var(--font-mono, Consolas, monospace);
+  font-size: 13px;
+  line-height: 1.6;
+  background: var(--bg-secondary, #f5f5f5);
+  padding: 16px;
+  border-radius: 6px;
+  overflow: auto;
+}
 
 /* ====== Metric Card Enhancements ====== */
 .metric-card-label {

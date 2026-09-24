@@ -157,10 +157,12 @@ public sealed class DocumentsController(
         }
     }
 
-    /// <summary>单篇重索引：Processing 时拒绝；否则 Status 重置为 Pending 并入队。</summary>
-    [HttpPost("{documentId:guid}/reindex")]
-    [MenuEndpoint("documents", "documents.reindex", "重新索引文档")]
-    public async Task<ActionResult<ApiResponse<object?>>> Reindex(Guid documentId, CancellationToken cancellationToken)
+    /// <summary>批量删除文档；请求体为 Guid 数组。</summary>
+    [HttpPost("batch-delete")]
+    [MenuEndpoint("documents", "documents.batchDelete", "批量删除文档")]
+    public async Task<ActionResult<ApiResponse<int>>> BatchDelete(
+        [FromBody] BatchDeleteDocumentsRequest request,
+        CancellationToken cancellationToken)
     {
         if (!HttpContext.TryGetActor(out var actor) || actor is null)
         {
@@ -171,8 +173,12 @@ public sealed class DocumentsController(
         var isAdmin = User.IsInRole("Admin");
         try
         {
-            await service.ReindexAsync(documentId, actor, roles, isAdmin, cancellationToken);
-            return Ok(ApiResponse<object?>.Success(null));
+            var count = await service.BatchDeleteAsync(request.Ids, actor, roles, isAdmin, cancellationToken);
+            return Ok(ApiResponse.Success(count, $"已删除 {count} 个文档"));
+        }
+        catch (ArgumentException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation, ex.Message));
         }
         catch (KeyNotFoundException ex)
         {
@@ -185,6 +191,39 @@ public sealed class DocumentsController(
         catch (InvalidOperationException ex)
         {
             return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Conflict, ex.Message));
+        }
+    }
+
+    /// <summary>获取文档预览内容（当前仅支持 text/plain，超出 1MB 截断）。</summary>
+    [HttpPost("{documentId:guid}/content")]
+    [MenuEndpoint("documents", "documents.content", "获取文档预览内容")]
+    public async Task<ActionResult<ApiResponse<DocumentContentDto>>> GetContent(
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        if (!HttpContext.TryGetActor(out var actor) || actor is null)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "用户身份无效"));
+        }
+
+        var roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray();
+        var isAdmin = User.IsInRole("Admin");
+        try
+        {
+            var content = await service.GetContentAsync(documentId, actor, roles, isAdmin, cancellationToken);
+            return Ok(ApiResponse.Success(content));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, ex.Message));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Forbidden, ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation, ex.Message));
         }
     }
 }

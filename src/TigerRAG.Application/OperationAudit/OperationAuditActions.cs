@@ -28,10 +28,12 @@ public static class OperationAuditActions
     public const string KbCreate = "kb.create";
     public const string KbUpdate = "kb.update";
     public const string KbDelete = "kb.delete";
+    public const string KbBatchDelete = "kb.batchDelete";
     public const string KbReindex = "kb.reindex";
 
     public const string DocumentCreate = "document.create";
     public const string DocumentDelete = "document.delete";
+    public const string DocumentBatchDelete = "document.batchDelete";
     public const string DocumentReindex = "document.reindex";
     public const string DocumentIndexStart = "document.index.start";
     public const string DocumentIndexSuccess = "document.index.success";

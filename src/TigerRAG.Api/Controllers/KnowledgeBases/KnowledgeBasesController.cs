@@ -144,6 +144,42 @@ public sealed class KnowledgeBasesController(KnowledgeBaseService service) : Con
         }
     }
 
+    /// <summary>批量删除知识库；请求体为 Guid 数组。</summary>
+    [HttpPost("batch-delete")]
+    [MenuEndpoint("knowledgeBases", "knowledgeBases.batchDelete", "批量删除知识库")]
+    public async Task<ActionResult<ApiResponse<int>>> BatchDelete(
+        [FromBody] BatchDeleteKnowledgeBasesRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!HttpContext.TryGetActor(out var actor) || actor is null)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "用户身份无效"));
+        }
+
+        var isAdmin = User.IsInRole("Admin");
+        try
+        {
+            var count = await service.BatchDeleteAsync(request.Ids, actor, isAdmin, cancellationToken);
+            return Ok(ApiResponse.Success(count, $"已删除 {count} 个知识库"));
+        }
+        catch (ArgumentException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation, ex.Message));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, ex.Message));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Forbidden, ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Conflict, ex.Message));
+        }
+    }
+
     /// <summary>把 KB 下全部非 Processing 文档重置为 Pending 并重新入队。</summary>
     [HttpPost("{kbId:guid}/reindex")]
     [MenuEndpoint("knowledgeBases", "knowledgeBases.reindex", "重新索引知识库")]

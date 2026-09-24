@@ -229,6 +229,72 @@ public sealed class DocumentServiceTests
         Assert.Equal(docId1, page.Items[0].Id);
     }
 
+    [Fact]
+    public async Task GetContentAsync_TxtContent_ReturnsDecodedText()
+    {
+        var docId = Guid.NewGuid();
+        var expected = "Hello, 世界！"u8.ToArray();
+        var storage = new RecordingFileStorage();
+        storage.Streams["p1"] = new MemoryStream(expected);
+        var query = new FakeQueryDal();
+        query.Documents[docId] = new DocumentSummary(
+            docId, Guid.NewGuid(), "a.txt", "text/plain", "p1", expected.Length, DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
+        var service = CreateService(new InMemoryKbDal(), new FakeLifecycleDal(), query, storage: storage, aclAll: true);
+
+        var result = await service.GetContentAsync(docId, Owner, [], isAdmin: true, CancellationToken.None);
+
+        Assert.Equal(docId, result.DocumentId);
+        Assert.Equal("text/plain", result.MimeType);
+        Assert.Equal("Hello, 世界！", result.Content);
+        Assert.False(result.Truncated);
+        Assert.Null(result.MaxPreviewBytes);
+    }
+
+    [Fact]
+    public async Task GetContentAsync_UnsupportedMime_Throws()
+    {
+        var docId = Guid.NewGuid();
+        var query = new FakeQueryDal();
+        query.Documents[docId] = new DocumentSummary(
+            docId, Guid.NewGuid(), "a.pdf", "application/pdf", "p1", 1024, DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
+        var service = CreateService(new InMemoryKbDal(), new FakeLifecycleDal(), query, aclAll: true);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.GetContentAsync(docId, Owner, [], isAdmin: true, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetContentAsync_UnauthorizedUser_Throws()
+    {
+        var docId = Guid.NewGuid();
+        var query = new FakeQueryDal();
+        query.Documents[docId] = new DocumentSummary(
+            docId, Guid.NewGuid(), "a.txt", "text/plain", "p1", 1024, DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
+        var service = CreateService(new InMemoryKbDal(), new FakeLifecycleDal(), query, aclAll: false, aclIds: []);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => service.GetContentAsync(docId, Stranger, [], isAdmin: false, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetContentAsync_LargeFile_TruncatesAndMarks()
+    {
+        var docId = Guid.NewGuid();
+        var size = 2 * 1024 * 1024; // 2MB
+        var storage = new RecordingFileStorage();
+        storage.Streams["p1"] = new MemoryStream(new byte[size]);
+        var query = new FakeQueryDal();
+        query.Documents[docId] = new DocumentSummary(
+            docId, Guid.NewGuid(), "big.txt", "text/plain", "p1", size, DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
+        var service = CreateService(new InMemoryKbDal(), new FakeLifecycleDal(), query, storage: storage, aclAll: true);
+
+        var result = await service.GetContentAsync(docId, Owner, [], isAdmin: true, CancellationToken.None);
+
+        Assert.True(result.Truncated);
+        Assert.Equal(1024 * 1024, result.MaxPreviewBytes);
+        Assert.Equal(1024 * 1024, result.Content.Length);
+    }
+
     private static DocumentService CreateService(
         IKbDal kbDal,
         IDocumentLifecycleDal? lifecycle = null,
@@ -335,8 +401,18 @@ internal sealed class RecordingFileStorage : IDocumentFileStorage
     public readonly List<string> WrittenPaths = [];
     public readonly List<string> DeletedPaths = [];
 
+    /// <summary>路径到流的映射；OpenReadAsync 返回已注册的流，未注册时返回空流。</summary>
+    public readonly Dictionary<string, MemoryStream> Streams = [];
+
     public Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken)
-        => Task.FromResult<Stream>(new MemoryStream());
+    {
+        if (Streams.TryGetValue(path, out var stream))
+        {
+            stream.Position = 0;
+            return Task.FromResult<Stream>(stream);
+        }
+        return Task.FromResult<Stream>(new MemoryStream());
+    }
 
     public Task WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken)
     {
