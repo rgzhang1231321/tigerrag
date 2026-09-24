@@ -1,6 +1,6 @@
 import { queryKeys } from '../../app/http'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createKb, deleteKb, batchDeleteKbs, listKbs, reindexKb, updateKb } from './knowledgeBaseApi'
+import { createKb, deleteKb, batchDeleteKbs, listKbs, reindexKb, updateKb, getKbPermissions, replaceKbPermissions } from './knowledgeBaseApi'
 import type { KnowledgeBaseDto } from './knowledgeBaseApi'
 
 /// <summary>列出当前用户可见的知识库。</summary>
@@ -76,6 +76,29 @@ export function useBatchDeleteKbs() {
       return batchDeleteKbs(ids)
     },
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeBases })
+    },
+  })
+}
+
+/// <summary>查询 KB 当前 ACL 状态；返回 null 表示加载失败（降级模式）。</summary>
+export function useKbPermissions(kbId: string | null) {
+  return useQuery({
+    queryKey: ['kb-permissions', kbId],
+    queryFn: () => getKbPermissions(kbId!),
+    enabled: kbId !== null && kbId !== '',
+  })
+}
+
+/// <summary>替换 KB 权限；成功后让 KB 权限和知识库列表缓存失效。</summary>
+export function useReplaceKbPermissions() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: { kbId: string; userIds: string[]; roles: string[] }): Promise<null> => {
+      return replaceKbPermissions(input.kbId, { userIds: input.userIds, roles: input.roles })
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['kb-permissions', variables.kbId] })
       void queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeBases })
     },
   })

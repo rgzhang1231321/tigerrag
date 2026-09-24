@@ -16,6 +16,7 @@ using TigerRAG.Api;
 using TigerRAG.Api.Hubs;
 using TigerRAG.Application.Auth;
 using TigerRAG.Application.Documents;
+using TigerRAG.Application.KnowledgeBases;
 using TigerRAG.Application.OperationAudit;
 using TigerRAG.Application.Shared;
 using TigerRAG.Application.Users;
@@ -399,6 +400,30 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
         Assert.Equal(["Editor", "Viewer"], accessDal.Roles);
     }
 
+    [Fact]
+    public async Task KnowledgeBasePermissions_ForAdmin_ReplacesUserAndRoleAcl()
+    {
+        var admin = new UserAccount(Guid.NewGuid(), "admin", ["Admin"]) { SecurityStamp = "test-stamp" };
+        var kbAccessDal = new StubKbAccessDal();
+        var grantStore = new StubGrantStore(("knowledgeBases", "knowledgeBases.permissions.replace"));
+        using var factory = CreateSecurityFactory(new StubUserDal(admin), grantStore: grantStore, kbAccess: kbAccessDal);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await LoginAsync(client, admin.UserName));
+        var kbId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        var response = await client.PostAsJsonAsync($"/api/knowledge-bases/{kbId}/permissions", new
+        {
+            userIds = new[] { userId, userId },
+            roles = new[] { "Viewer", "Editor", "Viewer" }
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(kbId, kbAccessDal.KbId);
+        Assert.Equal([userId], kbAccessDal.UserIds);
+        Assert.Equal(["Editor", "Viewer"], kbAccessDal.Roles);
+    }
+
     [Theory]
     [InlineData("ApiLogs", "apiLogs")]
     [InlineData("MenuConfigs", "menuConfigs")]
@@ -408,6 +433,7 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
     [InlineData("Reports", "reports")]
     [InlineData("Statistics", "statistics")]
     [InlineData("KnowledgeBases", "knowledgeBases")]
+    [InlineData("KnowledgeBasePermissions", "knowledgeBases")]
     [InlineData("Documents", "documents")]
     [InlineData("Conversations", "conversations")]
     [InlineData("AuditLogs", "auditLogs")]
@@ -446,7 +472,8 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
         IUserCredentialDal? credentials = null,
         IRefreshSessionDal? refreshSessions = null,
         IOperationAuditWriter? auditWriter = null,
-        IRoleEndpointGrantStore? grantStore = null) =>
+        IRoleEndpointGrantStore? grantStore = null,
+        IKbAccessDal? kbAccess = null) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("Jwt:Issuer", "TigerRAG.Tests");
@@ -474,6 +501,11 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
                 {
                     services.RemoveAll<IDocumentAccessDal>();
                     services.AddSingleton(documentAccess);
+                }
+                if (kbAccess is not null)
+                {
+                    services.RemoveAll<IKbAccessDal>();
+                    services.AddSingleton(kbAccess);
                 }
             });
         });
@@ -599,6 +631,12 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
             Roles = roles;
             return Task.CompletedTask;
         }
+
+        public Task<DocumentPermissionsSnapshot> GetPermissionsAsync(Guid documentId, CancellationToken cancellationToken)
+            => Task.FromResult(new DocumentPermissionsSnapshot([], []));
+
+        public Task<Guid?> GetDocumentOwnerIdAsync(Guid documentId, CancellationToken cancellationToken)
+            => Task.FromResult<Guid?>(null);
     }
 
     private sealed class StubUserCredentialDal : IUserCredentialDal
@@ -697,6 +735,40 @@ public sealed class ApiContractTests : IClassFixture<TigerRagApiFactory>
     {
         public Task RecordAsync(OperationAuditEntry entry, CancellationToken cancellationToken) =>
             Task.CompletedTask;
+    }
+
+    /// <summary>测试用 IKbAccessDal 伪造：记录 ReplacePermissions 调用参数，返回空快照。</summary>
+    private sealed class StubKbAccessDal : IKbAccessDal
+    {
+        public Guid? KbId { get; private set; }
+        public IReadOnlyCollection<Guid>? UserIds { get; private set; }
+        public IReadOnlyCollection<string>? Roles { get; private set; }
+
+        public Task<IReadOnlyList<Guid>> GetAccessibleKbIdsAsync(
+            Guid userId,
+            IReadOnlyCollection<string> roles,
+            CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<Guid>>([]);
+
+        public Task<KbPermissionsSnapshot> GetPermissionsAsync(Guid kbId, CancellationToken cancellationToken)
+            => Task.FromResult(new KbPermissionsSnapshot([], []));
+
+        public Task<Guid?> GetKbOwnerIdAsync(Guid kbId, CancellationToken cancellationToken)
+            => Task.FromResult<Guid?>(null);
+
+        public Task ReplacePermissionsAsync(
+            Guid kbId,
+            Guid actorId,
+            bool isAdmin,
+            IReadOnlyCollection<Guid> userIds,
+            IReadOnlyCollection<string> roles,
+            CancellationToken cancellationToken)
+        {
+            KbId = kbId;
+            UserIds = userIds;
+            Roles = roles;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed record ApiEnvelope<T>(int Code, string Message, T? Data);

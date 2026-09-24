@@ -21,6 +21,7 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
     : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>(options)
 {
     public DbSet<knowledge_base_record> KnowledgeBases => Set<knowledge_base_record>();
+    public DbSet<knowledge_base_permission_record> KnowledgeBasePermissions => Set<knowledge_base_permission_record>();
     public DbSet<document_record> Documents => Set<document_record>();
     public DbSet<document_permission_record> DocumentPermissions => Set<document_permission_record>();
     public DbSet<document_chunk_record> DocumentChunks => Set<document_chunk_record>();
@@ -62,6 +63,14 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
             entity.ToTable("knowledge_base_record");
             entity.Property(value => value.Name).HasMaxLength(200);
             entity.HasOne<AppUser>().WithMany().HasForeignKey(value => value.OwnerId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<knowledge_base_permission_record>(entity =>
+        {
+            entity.ToTable("knowledge_base_permission_record");
+            entity.HasKey(value => new { value.KnowledgeBaseId, value.PrincipalType, value.PrincipalId });
+            entity.Property(value => value.PrincipalType).HasConversion<string>().HasMaxLength(16);
+            entity.HasIndex(value => new { value.PrincipalType, value.PrincipalId });
         });
 
         builder.Entity<document_record>(entity =>

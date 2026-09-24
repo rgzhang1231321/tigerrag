@@ -30,6 +30,7 @@ public static class OperationAuditActions
     public const string KbDelete = "kb.delete";
     public const string KbBatchDelete = "kb.batchDelete";
     public const string KbReindex = "kb.reindex";
+    public const string KbPermissionsReplace = "kb.permissions.replace";
 
     public const string DocumentCreate = "document.create";
     public const string DocumentDelete = "document.delete";

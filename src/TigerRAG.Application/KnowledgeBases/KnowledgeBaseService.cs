@@ -20,6 +20,7 @@ public sealed class KnowledgeBaseService(
     IUnitOfWork unitOfWork,
     IOperationAuditWriter audit,
     IUserLookup userLookup,
+    KnowledgeBaseAccessService kbAccess,
     ILogger<KnowledgeBaseService> logger)
 {
     /// <summary>创建知识库；事务内插入行 + 审计；事务外补全 OwnerName。</summary>
@@ -45,13 +46,18 @@ public sealed class KnowledgeBaseService(
         return await MapToDtoAsync(knowledgeBase, cancellationToken);
     }
 
-    /// <summary>列出知识库：Admin 返回全部，非 Admin 仅返回 OwnerId == actor.Id。逐项补全 OwnerName 和 DocumentCount。</summary>
+    /// <summary>列出知识库：Admin 返回全部，非 Admin 返回 OwnerId == actor.Id ∪ KB ACL 授权的 KB。逐项补全 OwnerName 和 DocumentCount。</summary>
     public async Task<IReadOnlyList<KnowledgeBaseDto>> ListAsync(
         ActorContext actor,
         bool isAdmin,
+        IReadOnlyCollection<string> roles,
         CancellationToken cancellationToken)
     {
-        var summaries = await kbDal.ListAsync(actor.Id, isAdmin, cancellationToken);
+        var scope = await kbAccess.GetScopeAsync(actor.Id, roles, cancellationToken);
+
+        // DAL 层按 scope 过滤：AllKnowledgeBase=true 时返回全部，否则按 Id ∈ scope.KbIds 过滤。
+        var summaries = await kbDal.ListAsync(scope, cancellationToken);
+
         var dtos = new List<KnowledgeBaseDto>(summaries.Count);
         foreach (var summary in summaries)
         {
@@ -60,11 +66,12 @@ public sealed class KnowledgeBaseService(
         return dtos;
     }
 
-    /// <summary>按 Id 获取知识库详情；非 Admin 必须是 Owner，否则抛 UnauthorizedAccessException。</summary>
+    /// <summary>按 Id 获取知识库详情；非 Admin 必须是 Owner 或 ACL 授权用户，否则抛 UnauthorizedAccessException。</summary>
     public async Task<KnowledgeBaseDto> GetAsync(
         Guid id,
         ActorContext actor,
         bool isAdmin,
+        IReadOnlyCollection<string> roles,
         CancellationToken cancellationToken)
     {
         var knowledgeBase = await kbDal.FindAsync(id, cancellationToken)
@@ -72,7 +79,12 @@ public sealed class KnowledgeBaseService(
 
         if (!isAdmin && knowledgeBase.OwnerId != actor.Id)
         {
-            throw new UnauthorizedAccessException("仅知识库拥有者可查看。");
+            // 非 Owner 时检查 KB ACL 是否授权
+            var scope = await kbAccess.GetScopeAsync(actor.Id, roles, cancellationToken);
+            if (!scope.AllKnowledgeBase && !scope.KbIds.Contains(id))
+            {
+                throw new UnauthorizedAccessException("仅知识库拥有者可查看。");
+            }
         }
 
         return await MapToDtoAsync(knowledgeBase, cancellationToken);
@@ -136,7 +148,7 @@ public sealed class KnowledgeBaseService(
         return await MapToDtoAsync(result, cancellationToken);
     }
 
-    /// <summary>级联删除知识库：事务内清文档/chunks/permissions/KB 行 + 审计；事务外清理向量和 MinIO 文件。</summary>
+    /// <summary>级联删除知识库：事务内清 KB ACL/文档/chunks/permissions/KB 行 + 审计；事务外清理向量和 MinIO 文件。</summary>
     public async Task DeleteAsync(
         Guid id,
         ActorContext actor,
@@ -155,6 +167,9 @@ public sealed class KnowledgeBaseService(
             {
                 throw new UnauthorizedAccessException("仅知识库拥有者可删除。");
             }
+
+            // 业务代码级联删除 KB ACL 行（无 FK CASCADE）。
+            await kbDal.DeletePermissionsAsync(id, ct);
 
             documentIds.AddRange(await kbDal.ListDocumentIdsAsync(id, ct));
             foreach (var docId in documentIds)
@@ -233,6 +248,9 @@ public sealed class KnowledgeBaseService(
                 {
                     throw new UnauthorizedAccessException($"无权限删除知识库「{knowledgeBase.Name}」。");
                 }
+
+                // 业务代码级联删除 KB ACL 行（无 FK CASCADE）。
+                await kbDal.DeletePermissionsAsync(id, ct);
 
                 var documentIds = await kbDal.ListDocumentIdsAsync(id, ct);
                 foreach (var docId in documentIds)

@@ -16,6 +16,7 @@ import {
   DeleteOutlined,
   EditOutlined,
   EyeOutlined,
+  LockOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
 import { useMemo, useState } from "react";
@@ -29,6 +30,7 @@ import {
   useBatchDeleteKbs,
 } from "./useKnowledgeBases";
 import type { KnowledgeBaseDto } from "./knowledgeBaseApi";
+import { KnowledgeBasePermissionModal } from "./KnowledgeBasePermissionModal";
 
 type ModalMode = "closed" | "create" | { edit: KnowledgeBaseDto };
 
@@ -44,7 +46,7 @@ function renderOwner(kb: KnowledgeBaseDto) {
   );
 }
 
-/// <summary>知识库管理页：列表 + 筛选 + 批量选择 + 创建/编辑弹窗 + 删除确认。</summary>
+/// <summary>知识库管理页：列表 + 筛选 + 批量选择 + 创建/编辑弹窗 + 权限弹窗 + 删除确认。</summary>
 export function KnowledgeBasePage() {
   const navigate = useNavigate();
   const { data: kbs = [], isPending, refetch } = useKnowledgeBases();
@@ -55,6 +57,9 @@ export function KnowledgeBasePage() {
   const [ownerFilter, setOwnerFilter] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<ModalMode>("closed");
+  const [permissionKb, setPermissionKb] = useState<KnowledgeBaseDto | null>(
+    null,
+  );
   const createMutation = useCreateKb();
   const updateMutation = useUpdateKb();
   const deleteMutation = useDeleteKb();
@@ -155,6 +160,7 @@ export function KnowledgeBasePage() {
     {
       title: "操作",
       key: "actions",
+      width: 450,
       render: (_value, kb) => (
         <Space>
           <Button
@@ -187,6 +193,14 @@ export function KnowledgeBasePage() {
             onClick={() => setMode({ edit: kb })}
           >
             编辑
+          </Button>
+          <Button
+            type="link"
+            style={{ padding: "0 4px" }}
+            icon={<LockOutlined />}
+            onClick={() => setPermissionKb(kb)}
+          >
+            权限
           </Button>
           <Popconfirm
             title="删除知识库"
@@ -341,6 +355,14 @@ export function KnowledgeBasePage() {
             )
           }
           submitting={updateMutation.isPending}
+        />
+      )}
+      {permissionKb !== null && (
+        <KnowledgeBasePermissionModal
+          kbId={permissionKb.id}
+          kbName={permissionKb.name}
+          open={true}
+          onClose={() => setPermissionKb(null)}
         />
       )}
     </main>

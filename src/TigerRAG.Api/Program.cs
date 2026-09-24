@@ -32,12 +32,23 @@ try
 }
 catch (Exception ex)
 {
-    // 启动期任何失败（配置缺失 / builder 装配 / 端口占用 / bootstrap 异常）：先走结构化日志通道，再 console.stderr 打一行摘要，rethrow 让进程非零退出。
-    using var loggerFactory = LoggerFactory.Create(builder => builder.AddSimpleConsole());
-    loggerFactory.CreateLogger("TigerRAG.Api.Program")
-        .LogCritical(ex, "TigerRAG startup failed: {Message}", ex.Message);
-    Console.Error.WriteLine($"[FATAL] TigerRAG startup failed: {ex.GetType().Name}: {ex.Message}");
-    throw;
+    // 启动期异常写本地文件，便于数据库日志不可用时排查。
+    var logDir = Path.Combine(AppContext.BaseDirectory, "logs");
+    Directory.CreateDirectory(logDir);
+    var logFile = Path.Combine(logDir, $"startup-fail-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+    var content = $"""
+        [{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] TigerRAG API 启动失败
+
+        异常类型: {ex.GetType().FullName}
+        异常消息: {ex.Message}
+
+        堆栈跟踪:
+        {ex.StackTrace}
+
+        {(ex.InnerException is not null ? $"内部异常: {ex.InnerException.GetType().FullName}: {ex.InnerException.Message}\n\n{ex.InnerException.StackTrace}" : "")}
+        """;
+    File.WriteAllText(logFile, content);
+    Console.Error.WriteLine($"[FATAL] 异常详情已写入: {logFile}");
 }
 
 public partial class Program;

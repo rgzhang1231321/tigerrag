@@ -16,4 +16,14 @@ public interface IDocumentAccessDal
         IReadOnlyCollection<Guid> userIds,
         IReadOnlyCollection<string> roles,
         CancellationToken cancellationToken);
+
+    /// <summary>查询文档当前 ACL：返回已授权用户 Id 与角色 Id。</summary>
+    Task<DocumentPermissionsSnapshot> GetPermissionsAsync(
+        Guid documentId,
+        CancellationToken cancellationToken);
+
+    /// <summary>查询文档所属知识库的拥有者 Id；文档不存在时返回 null。</summary>
+    Task<Guid?> GetDocumentOwnerIdAsync(
+        Guid documentId,
+        CancellationToken cancellationToken);
 }

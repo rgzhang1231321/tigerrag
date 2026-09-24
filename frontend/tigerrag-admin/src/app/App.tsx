@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons'
 import { Dropdown, Layout, Menu, Spin, Tag } from 'antd'
 import type { MenuProps } from 'antd'
+import { useQueryClient } from '@tanstack/react-query'
 import { lazy, Suspense, useEffect, useMemo, useState, createElement } from 'react'
 import { Link, Route, Routes, useLocation } from 'react-router-dom'
 import { logout } from '../features/auth/authApi'
@@ -110,6 +111,7 @@ export function App() {
   const user = useAuthStore((state) => state.user)
   const setSession = useAuthStore((state) => state.setSession)
   const clear = useAuthStore((state) => state.clear)
+  const queryClient = useQueryClient()
 
   // 页面加载时先从 sessionStorage 恢复会话，避免 F5 后因 cookie 未发送导致闪跳登录页。
   // sessionStorage 在 F5 刷新后保留（同标签页），关闭标签页后清除。
@@ -126,9 +128,13 @@ export function App() {
           setSession(session)
         } else {
           useAuthStore.getState().clear()
+          queryClient.clear()
         }
       })
-      .catch(() => useAuthStore.getState().clear())
+      .catch(() => {
+        useAuthStore.getState().clear()
+        queryClient.clear()
+      })
       .finally(() => setReady(true))
   }, [setSession])
 
@@ -145,6 +151,7 @@ export function App() {
       await logout()
     } finally {
       clear()
+      queryClient.clear()
     }
   }
 
@@ -155,6 +162,7 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
   const location = useLocation()
   const user = useAuthStore((state) => state.user)
   const clear = useAuthStore((state) => state.clear)
+  const queryClient = useQueryClient()
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const [siderCollapsed, setSiderCollapsed] = useState(false)
   const rolesKey = user?.roles.slice().sort().join('|') ?? 'none'
@@ -310,6 +318,7 @@ function AuthenticatedShell({ userName, onLogout }: { userName: string; onLogout
         onChanged={() => {
           setChangePasswordOpen(false)
           clear()
+          queryClient.clear()
         }}
       />
     </Layout>

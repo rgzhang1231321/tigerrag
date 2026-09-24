@@ -1,43 +1,40 @@
-using TigerRAG.Application.Documents;
+using TigerRAG.Application.KnowledgeBases;
 using TigerRAG.Application.Roles;
 
-namespace TigerRAG.UnitTests.Documents;
+namespace TigerRAG.UnitTests.KnowledgeBases;
 
-public sealed class DocumentAccessServiceTests
+/// <summary>KnowledgeBaseAccessService 行为测试：覆盖 Admin 短路、普通用户并集、ACL 替换归一化、权限查询授权。</summary>
+public sealed class KnowledgeBaseAccessServiceTests
 {
+    private static readonly Guid AdminUser = Guid.Parse("8f86fa4c-c8e5-4bc0-a563-528b70a74576");
+
     [Fact]
-    public async Task GetScopeAsync_ForAdmin_GrantsAllDocumentsWithoutDalQuery()
+    public async Task GetScopeAsync_ForAdmin_GrantsAllKnowledgeBasesWithoutDalQuery()
     {
-        var dal = new RecordingDocumentAccessDal([]);
-        var registry = new FakeRoleRegistry(true); // 用户持有 Admin
-        var service = new DocumentAccessService(dal, registry);
+        var dal = new RecordingKbAccessDal([]);
+        var registry = new FakeRoleRegistry(true);
+        var service = new KnowledgeBaseAccessService(dal, registry);
 
-        var scope = await service.GetScopeAsync(
-            Guid.NewGuid(),
-            ["Admin"],
-            CancellationToken.None);
+        var scope = await service.GetScopeAsync(AdminUser, ["Admin"], CancellationToken.None);
 
-        Assert.True(scope.AllDocuments);
-        Assert.Empty(scope.DocumentIds);
+        Assert.True(scope.AllKnowledgeBase);
+        Assert.Empty(scope.KbIds);
         Assert.False(dal.WasCalled);
     }
 
     [Fact]
     public async Task GetScopeAsync_ForOrdinaryUser_UsesUserAndRoleAcl()
     {
-        var allowedDocument = Guid.NewGuid();
-        var dal = new RecordingDocumentAccessDal([allowedDocument]);
-        var registry = new FakeRoleRegistry(false); // 用户不持有 Admin
-        var service = new DocumentAccessService(dal, registry);
+        var allowedKb = Guid.NewGuid();
+        var dal = new RecordingKbAccessDal([allowedKb]);
+        var registry = new FakeRoleRegistry(false);
+        var service = new KnowledgeBaseAccessService(dal, registry);
         var userId = Guid.NewGuid();
 
-        var scope = await service.GetScopeAsync(
-            userId,
-            ["Viewer"],
-            CancellationToken.None);
+        var scope = await service.GetScopeAsync(userId, ["Viewer"], CancellationToken.None);
 
-        Assert.False(scope.AllDocuments);
-        Assert.Equal([allowedDocument], scope.DocumentIds);
+        Assert.False(scope.AllKnowledgeBase);
+        Assert.Equal([allowedKb], scope.KbIds);
         Assert.Equal(userId, dal.UserId);
         Assert.Equal(["Viewer"], dal.Roles);
     }
@@ -45,22 +42,22 @@ public sealed class DocumentAccessServiceTests
     [Fact]
     public async Task ReplacePermissionsAsync_WithKnownPrincipals_NormalizesAndUsesDal()
     {
-        var dal = new RecordingDocumentAccessDal([]);
+        var dal = new RecordingKbAccessDal([]);
         var registry = new FakeRoleRegistry(false);
-        var service = new DocumentAccessService(dal, registry);
+        var service = new KnowledgeBaseAccessService(dal, registry);
         var actorId = Guid.NewGuid();
-        var documentId = Guid.NewGuid();
+        var kbId = Guid.NewGuid();
         var userId = Guid.NewGuid();
 
         await service.ReplacePermissionsAsync(
-            documentId,
+            kbId,
             actorId,
             isAdmin: true,
             [userId, userId],
             ["Viewer", "Editor", "Viewer"],
             CancellationToken.None);
 
-        Assert.Equal(documentId, dal.PermissionDocumentId);
+        Assert.Equal(kbId, dal.PermissionKbId);
         Assert.Equal(actorId, dal.ActorId);
         Assert.True(dal.IsAdmin);
         Assert.Equal([userId], dal.PermissionUserIds);
@@ -70,14 +67,18 @@ public sealed class DocumentAccessServiceTests
     [Fact]
     public async Task GetPermissionsAsync_ForAdmin_ReturnsCurrentAcl()
     {
-        var documentId = Guid.NewGuid();
+        var kbId = Guid.NewGuid();
         var userId = Guid.NewGuid();
         var roleId = Guid.NewGuid();
-        var dal = new RecordingDocumentAccessDal([]) { OwnerId = userId, Snapshot = new DocumentPermissionsSnapshot([userId], [roleId]) };
+        var dal = new RecordingKbAccessDal([])
+        {
+            OwnerId = userId,
+            Snapshot = new KbPermissionsSnapshot([userId], [roleId])
+        };
         var registry = new FakeRoleRegistry(true) { RoleNames = ["Viewer"] };
-        var service = new DocumentAccessService(dal, registry);
+        var service = new KnowledgeBaseAccessService(dal, registry);
 
-        var permissions = await service.GetPermissionsAsync(documentId, Guid.NewGuid(), isAdmin: true, CancellationToken.None);
+        var permissions = await service.GetPermissionsAsync(kbId, Guid.NewGuid(), isAdmin: true, CancellationToken.None);
 
         Assert.Equal([userId], permissions.UserIds);
         Assert.Equal(["Viewer"], permissions.Roles);
@@ -86,20 +87,20 @@ public sealed class DocumentAccessServiceTests
     [Fact]
     public async Task GetPermissionsAsync_ForNonOwner_Forbidden()
     {
-        var dal = new RecordingDocumentAccessDal([]) { OwnerId = Guid.NewGuid() };
+        var dal = new RecordingKbAccessDal([]) { OwnerId = Guid.NewGuid() };
         var registry = new FakeRoleRegistry(false);
-        var service = new DocumentAccessService(dal, registry);
+        var service = new KnowledgeBaseAccessService(dal, registry);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
             service.GetPermissionsAsync(Guid.NewGuid(), Guid.NewGuid(), isAdmin: false, CancellationToken.None));
     }
 
     [Fact]
-    public async Task GetPermissionsAsync_ForMissingDocument_ThrowsKeyNotFound()
+    public async Task GetPermissionsAsync_ForMissingKb_ThrowsKeyNotFound()
     {
-        var dal = new RecordingDocumentAccessDal([]);
+        var dal = new RecordingKbAccessDal([]);
         var registry = new FakeRoleRegistry(true);
-        var service = new DocumentAccessService(dal, registry);
+        var service = new KnowledgeBaseAccessService(dal, registry);
 
         await Assert.ThrowsAsync<KeyNotFoundException>(() =>
             service.GetPermissionsAsync(Guid.NewGuid(), Guid.NewGuid(), isAdmin: true, CancellationToken.None));
@@ -114,7 +115,7 @@ public sealed class DocumentAccessServiceTests
             Task.FromResult(true);
 
         public Task<bool> UserHasRoleAsync(Guid userId, string name, CancellationToken cancellationToken) =>
-            Task.FromResult(isAdmin && string.Equals(name, "Admin", StringComparison.Ordinal));
+            Task.FromResult(isAdmin && userId == AdminUser && string.Equals(name, "Admin", StringComparison.Ordinal));
 
         public Task<int> CountHoldersAsync(string name, CancellationToken cancellationToken) =>
             Task.FromResult(isAdmin ? 1 : 0);
@@ -125,21 +126,22 @@ public sealed class DocumentAccessServiceTests
             Task.FromResult(RoleNames);
     }
 
-    private sealed class RecordingDocumentAccessDal(IReadOnlyList<Guid> result) : IDocumentAccessDal
+    /// <summary>测试用 IKbAccessDal 伪造：记录调用参数，返回预设结果。</summary>
+    private sealed class RecordingKbAccessDal(IReadOnlyList<Guid> result) : IKbAccessDal
     {
         public bool WasCalled { get; private set; }
         public Guid? UserId { get; private set; }
         public IReadOnlyCollection<string>? Roles { get; private set; }
-        public Guid? PermissionDocumentId { get; private set; }
+        public Guid? PermissionKbId { get; private set; }
         public Guid? ActorId { get; private set; }
         public bool IsAdmin { get; private set; }
         public IReadOnlyCollection<Guid>? PermissionUserIds { get; private set; }
         public IReadOnlyCollection<string>? PermissionRoles { get; private set; }
 
         public Guid? OwnerId { get; init; }
-        public DocumentPermissionsSnapshot? Snapshot { get; init; }
+        public KbPermissionsSnapshot? Snapshot { get; init; }
 
-        public Task<IReadOnlyList<Guid>> GetAccessibleDocumentIdsAsync(
+        public Task<IReadOnlyList<Guid>> GetAccessibleKbIdsAsync(
             Guid userId,
             IReadOnlyCollection<string> roles,
             CancellationToken cancellationToken)
@@ -150,30 +152,30 @@ public sealed class DocumentAccessServiceTests
             return Task.FromResult(result);
         }
 
+        public Task<KbPermissionsSnapshot> GetPermissionsAsync(
+            Guid kbId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(Snapshot ?? new KbPermissionsSnapshot([], []));
+
+        public Task<Guid?> GetKbOwnerIdAsync(
+            Guid kbId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(OwnerId);
+
         public Task ReplacePermissionsAsync(
-            Guid documentId,
+            Guid kbId,
             Guid actorId,
             bool isAdmin,
             IReadOnlyCollection<Guid> userIds,
             IReadOnlyCollection<string> roles,
             CancellationToken cancellationToken)
         {
-            PermissionDocumentId = documentId;
+            PermissionKbId = kbId;
             ActorId = actorId;
             IsAdmin = isAdmin;
             PermissionUserIds = userIds;
             PermissionRoles = roles;
             return Task.CompletedTask;
         }
-
-        public Task<DocumentPermissionsSnapshot> GetPermissionsAsync(
-            Guid documentId,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(Snapshot ?? new DocumentPermissionsSnapshot([], []));
-
-        public Task<Guid?> GetDocumentOwnerIdAsync(
-            Guid documentId,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(OwnerId);
     }
 }

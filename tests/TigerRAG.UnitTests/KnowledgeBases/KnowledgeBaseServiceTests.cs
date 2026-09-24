@@ -3,6 +3,7 @@ using TigerRAG.Application.Documents.Indexing;
 using TigerRAG.Application.Documents.Lifecycle;
 using TigerRAG.Application.KnowledgeBases;
 using TigerRAG.Application.OperationAudit;
+using TigerRAG.Application.Roles;
 using TigerRAG.Application.Shared;
 using TigerRAG.Application.Users;
 using TigerRAG.Domain.Documents;
@@ -44,7 +45,7 @@ public sealed class KnowledgeBaseServiceTests
         dal.Seed(KnowledgeBase.Create("KB1", null, Owner.Id, Now), KnowledgeBase.Create("KB2", null, Stranger.Id, Now));
         var service = CreateService(dal);
 
-        var result = await service.ListAsync(Admin, isAdmin: true, CancellationToken.None);
+        var result = await service.ListAsync(Admin, isAdmin: true, Array.Empty<string>(), CancellationToken.None);
 
         Assert.Equal(2, result.Count);
     }
@@ -56,10 +57,31 @@ public sealed class KnowledgeBaseServiceTests
         dal.Seed(KnowledgeBase.Create("KB1", null, Owner.Id, Now), KnowledgeBase.Create("KB2", null, Stranger.Id, Now));
         var service = CreateService(dal);
 
-        var result = await service.ListAsync(Owner, isAdmin: false, CancellationToken.None);
+        var result = await service.ListAsync(Owner, isAdmin: false, Array.Empty<string>(), CancellationToken.None);
 
         Assert.Single(result);
         Assert.Equal("KB1", result[0].Name);
+    }
+
+    [Fact]
+    public async Task ListAsync_NonAdminSeesAclGrantedKb()
+    {
+        // Stranger 拥有一个 KB，并通过用户 ACL 授权给 Owner。
+        var dal = new InMemoryKbDal();
+        var strangerKb = KnowledgeBase.Create("StrangerKB", null, Stranger.Id, Now);
+        dal.Seed(KnowledgeBase.Create("OwnerKB", null, Owner.Id, Now), strangerKb);
+
+        // 构造一个 FakeKbAccessDal，模拟 KB ACL 授权：Owner 可访问 strangerKb。
+        var aclScope = new KbAccessScope(false, [strangerKb.Id]);
+        var kbAccess = new KnowledgeBaseAccessService(new FakeKbAccessAclDal(aclScope), new FakeRoleRegistry(Owner.Id));
+        var service = CreateService(dal, kbAccess: kbAccess);
+
+        var result = await service.ListAsync(Owner, isAdmin: false, Array.Empty<string>(), CancellationToken.None);
+
+        // Owner 应看到自己的 OwnerKB + ACL 授权的 StrangerKB。
+        Assert.Equal(2, result.Count);
+        Assert.Contains(result, kb => kb.Name == "OwnerKB");
+        Assert.Contains(result, kb => kb.Name == "StrangerKB");
     }
 
     [Fact]
@@ -71,7 +93,7 @@ public sealed class KnowledgeBaseServiceTests
         var service = CreateService(dal);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(
-            () => service.GetAsync(kb.Id, Stranger, isAdmin: false, CancellationToken.None));
+            () => service.GetAsync(kb.Id, Stranger, isAdmin: false, Array.Empty<string>(), CancellationToken.None));
     }
 
     [Fact]
@@ -206,8 +228,10 @@ public sealed class KnowledgeBaseServiceTests
         FakeUnitOfWork? uow = null,
         FakeDocumentLifecycleDal? docs = null,
         RecordingQueue? queue = null,
-        FakeDocumentQueryDal? queryDal = null)
+        FakeDocumentQueryDal? queryDal = null,
+        KnowledgeBaseAccessService? kbAccess = null)
     {
+        kbAccess ??= new KnowledgeBaseAccessService(new FakeKbAccessDal(dal.Entities), new FakeRoleRegistry(Admin.Id));
         return new KnowledgeBaseService(
             dal,
             docs ?? new FakeDocumentLifecycleDal(),
@@ -218,6 +242,7 @@ public sealed class KnowledgeBaseServiceTests
             uow ?? new FakeUnitOfWork(),
             audit ?? new RecordingAuditWriter(),
             new FakeUserLookup(),
+            kbAccess,
             new StubLogger());
     }
 }
@@ -239,10 +264,14 @@ internal sealed class InMemoryKbDal : IKbDal
     public Task<KnowledgeBase?> FindAsync(Guid id, CancellationToken cancellationToken)
         => Task.FromResult(Entities.GetValueOrDefault(id));
 
-    public Task<IReadOnlyList<KnowledgeBaseSummary>> ListAsync(Guid actorId, bool isAdmin, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<KnowledgeBaseSummary>> ListAsync(KbAccessScope scope, CancellationToken cancellationToken)
     {
         var query = Entities.Values.AsEnumerable();
-        if (!isAdmin) query = query.Where(kb => kb.OwnerId == actorId);
+        if (!scope.AllKnowledgeBase)
+        {
+            var accessibleIds = scope.KbIds.ToHashSet();
+            query = query.Where(kb => accessibleIds.Contains(kb.Id));
+        }
         return Task.FromResult<IReadOnlyList<KnowledgeBaseSummary>>(query
             .Select(kb => new KnowledgeBaseSummary(kb.Id, kb.Name, kb.Description, kb.OwnerId, null, 0, kb.CreatedAt))
             .ToList());
@@ -268,6 +297,10 @@ internal sealed class InMemoryKbDal : IKbDal
         Entities.Remove(kbId);
         return Task.CompletedTask;
     }
+
+    /// <summary>删除知识库的所有 ACL 行；内存 Fake 无需实际存储 ACL，直接返回完成。</summary>
+    public Task DeletePermissionsAsync(Guid kbId, CancellationToken cancellationToken)
+        => Task.CompletedTask;
 
     public Task<IReadOnlyList<Guid>> ListNonProcessingDocumentIdsAsync(Guid kbId, CancellationToken cancellationToken)
         => Task.FromResult<IReadOnlyList<Guid>>(NonProcessingIds.GetValueOrDefault(kbId) ?? []);
@@ -408,5 +441,76 @@ internal sealed class StubLogger : ILogger<KnowledgeBaseService>
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
     public bool IsEnabled(LogLevel logLevel) => false;
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) { }
+}
+
+/// <summary>内存 IKbAccessDal；共享 InMemoryKbDal 的 KB 实体字典，使 GetAccessibleKbIdsAsync 能返回用户拥有的 KB。</summary>
+internal sealed class FakeKbAccessDal(IReadOnlyDictionary<Guid, KnowledgeBase> entities) : IKbAccessDal
+{
+    public Task<IReadOnlyList<Guid>> GetAccessibleKbIdsAsync(
+        Guid userId,
+        IReadOnlyCollection<string> roles,
+        CancellationToken cancellationToken)
+    {
+        var owned = entities.Values.Where(kb => kb.OwnerId == userId).Select(kb => kb.Id).ToList();
+        return Task.FromResult<IReadOnlyList<Guid>>(owned);
+    }
+
+    public Task<KbPermissionsSnapshot> GetPermissionsAsync(Guid kbId, CancellationToken cancellationToken)
+        => Task.FromResult(new KbPermissionsSnapshot([], []));
+
+    public Task<Guid?> GetKbOwnerIdAsync(Guid kbId, CancellationToken cancellationToken)
+        => Task.FromResult(entities.GetValueOrDefault(kbId)?.OwnerId);
+
+    public Task ReplacePermissionsAsync(
+        Guid kbId,
+        Guid actorId,
+        bool isAdmin,
+        IReadOnlyCollection<Guid> userIds,
+        IReadOnlyCollection<string> roles,
+        CancellationToken cancellationToken)
+        => Task.CompletedTask;
+}
+
+/// <summary>内存 IKbAccessDal；返回预设的访问范围，用于测试 ACL 授权场景。</summary>
+internal sealed class FakeKbAccessAclDal(KbAccessScope scope) : IKbAccessDal
+{
+    public Task<IReadOnlyList<Guid>> GetAccessibleKbIdsAsync(
+        Guid userId,
+        IReadOnlyCollection<string> roles,
+        CancellationToken cancellationToken)
+        => Task.FromResult(scope.KbIds);
+
+    public Task<KbPermissionsSnapshot> GetPermissionsAsync(Guid kbId, CancellationToken cancellationToken)
+        => Task.FromResult(new KbPermissionsSnapshot([], []));
+
+    public Task<Guid?> GetKbOwnerIdAsync(Guid kbId, CancellationToken cancellationToken)
+        => Task.FromResult<Guid?>(null);
+
+    public Task ReplacePermissionsAsync(
+        Guid kbId,
+        Guid actorId,
+        bool isAdmin,
+        IReadOnlyCollection<Guid> userIds,
+        IReadOnlyCollection<string> roles,
+        CancellationToken cancellationToken)
+        => Task.CompletedTask;
+}
+
+/// <summary>内存 IRoleRegistry；Admin 测试用户持有 Admin 角色，用于 KB Service 编排测试。</summary>
+internal sealed class FakeRoleRegistry(Guid adminUserId) : IRoleRegistry
+{
+    public Task<bool> RoleExistsAsync(string name, CancellationToken cancellationToken)
+        => Task.FromResult(string.Equals(name, "Admin", StringComparison.OrdinalIgnoreCase));
+
+    public Task<bool> UserHasRoleAsync(Guid userId, string name, CancellationToken cancellationToken)
+        => Task.FromResult(userId == adminUserId && string.Equals(name, "Admin", StringComparison.OrdinalIgnoreCase));
+
+    public Task<int> CountHoldersAsync(string name, CancellationToken cancellationToken)
+        => Task.FromResult(0);
+
+    public Task<IReadOnlyCollection<string>> GetRoleNamesAsync(
+        IReadOnlyCollection<Guid> roleIds,
+        CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyCollection<string>>([]);
 }
 

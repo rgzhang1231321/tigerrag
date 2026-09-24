@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using TigerRAG.Api.Common;
 using TigerRAG.Application.Auth;
@@ -10,7 +11,7 @@ namespace TigerRAG.Api.Controllers.KnowledgeBases;
 [Route("api/knowledge-bases")]
 public sealed class KnowledgeBasesController(KnowledgeBaseService service) : ControllerBase
 {
-    /// <summary>查询当前用户可见的知识库列表；Admin 返回全部，非 Admin 仅返回 OwnerId == actor.Id。</summary>
+    /// <summary>查询当前用户可见的知识库列表；Admin 返回全部，非 Admin 返回 Owner ∪ ACL 授权的 KB。</summary>
     [HttpPost("list")]
     [MenuEndpoint("knowledgeBases", "knowledgeBases.list", "获取知识库列表")]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<KnowledgeBaseDto>>>> List(CancellationToken cancellationToken)
@@ -20,10 +21,11 @@ public sealed class KnowledgeBasesController(KnowledgeBaseService service) : Con
             return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "用户身份无效"));
         }
 
+        var roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray();
         var isAdmin = User.IsInRole("Admin");
         try
         {
-            var result = await service.ListAsync(actor, isAdmin, cancellationToken);
+            var result = await service.ListAsync(actor, isAdmin, roles, cancellationToken);
             return Ok(ApiResponse.Success(result));
         }
         catch (ArgumentException ex)
@@ -55,7 +57,7 @@ public sealed class KnowledgeBasesController(KnowledgeBaseService service) : Con
         }
     }
 
-    /// <summary>获取知识库详情；非 Admin 必须是 Owner。</summary>
+    /// <summary>获取知识库详情；非 Admin 必须是 Owner 或 ACL 授权用户。</summary>
     [HttpPost("{kbId:guid}")]
     [MenuEndpoint("knowledgeBases", "knowledgeBases.get", "获取知识库详情")]
     public async Task<ActionResult<ApiResponse<KnowledgeBaseDto>>> Get(Guid kbId, CancellationToken cancellationToken)
@@ -65,10 +67,11 @@ public sealed class KnowledgeBasesController(KnowledgeBaseService service) : Con
             return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "用户身份无效"));
         }
 
+        var roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray();
         var isAdmin = User.IsInRole("Admin");
         try
         {
-            var kb = await service.GetAsync(kbId, actor, isAdmin, cancellationToken);
+            var kb = await service.GetAsync(kbId, actor, isAdmin, roles, cancellationToken);
             return Ok(ApiResponse.Success(kb));
         }
         catch (KeyNotFoundException ex)
@@ -114,7 +117,7 @@ public sealed class KnowledgeBasesController(KnowledgeBaseService service) : Con
         }
     }
 
-    /// <summary>级联删除知识库（含文档/chunks/permissions/向量/MinIO 文件）。</summary>
+    /// <summary>级联删除知识库（含 KB ACL/文档/chunks/permissions/向量/MinIO 文件）。</summary>
     [HttpPost("{kbId:guid}/delete")]
     [MenuEndpoint("knowledgeBases", "knowledgeBases.delete", "删除知识库")]
     public async Task<ActionResult<ApiResponse<object?>>> Delete(Guid kbId, CancellationToken cancellationToken)

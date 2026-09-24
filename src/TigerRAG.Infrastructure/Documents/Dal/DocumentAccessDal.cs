@@ -37,6 +37,47 @@ public sealed class DocumentAccessDal(
         return await ownedDocuments.Union(permittedDocuments).ToListAsync(cancellationToken);
     }
 
+    public async Task<DocumentPermissionsSnapshot> GetPermissionsAsync(
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        var permissions = await dbContext.DocumentPermissions
+            .Where(permission => permission.DocumentId == documentId)
+            .ToListAsync(cancellationToken);
+
+        var userIds = permissions
+            .Where(permission => permission.PrincipalType == PermissionPrincipalType.User)
+            .Select(permission => permission.PrincipalId)
+            .ToArray();
+
+        var roleIds = permissions
+            .Where(permission => permission.PrincipalType == PermissionPrincipalType.Role)
+            .Select(permission => permission.PrincipalId)
+            .ToArray();
+
+        return new DocumentPermissionsSnapshot(userIds, roleIds);
+    }
+
+    public async Task<Guid?> GetDocumentOwnerIdAsync(
+        Guid documentId,
+        CancellationToken cancellationToken)
+    {
+        // 先查文档拿到 KnowledgeBaseId，再查 KB 拿到 OwnerId；避免 DB 级 JOIN。
+        var kbId = await dbContext.Documents
+            .Where(document => document.Id == documentId)
+            .Select(document => document.KnowledgeBaseId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (kbId == default)
+        {
+            return null;
+        }
+
+        return await dbContext.KnowledgeBases
+            .Where(knowledgeBase => knowledgeBase.Id == kbId)
+            .Select(knowledgeBase => (Guid?)knowledgeBase.OwnerId)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task ReplacePermissionsAsync(
         Guid documentId,
         Guid actorId,
@@ -53,14 +94,20 @@ public sealed class DocumentAccessDal(
                 $""" SELECT 1 FROM "document_record" WHERE "Id" = {documentId} FOR UPDATE """,
                 ct);
 
-            var ownerId = await dbContext.Documents
+            // 先查文档拿到 KnowledgeBaseId，再查 KB 拿到 OwnerId；避免 DB 级 JOIN。
+            var kbId = await dbContext.Documents
                 .Where(document => document.Id == documentId)
-                .Join(
-                    dbContext.KnowledgeBases,
-                    document => document.KnowledgeBaseId,
-                    knowledgeBase => knowledgeBase.Id,
-                    (_, knowledgeBase) => (Guid?)knowledgeBase.OwnerId)
-                .SingleOrDefaultAsync(ct);
+                .Select(document => document.KnowledgeBaseId)
+                .FirstOrDefaultAsync(ct);
+            if (kbId == default)
+            {
+                throw new KeyNotFoundException($"Document {documentId} was not found.");
+            }
+
+            var ownerId = await dbContext.KnowledgeBases
+                .Where(knowledgeBase => knowledgeBase.Id == kbId)
+                .Select(knowledgeBase => (Guid?)knowledgeBase.OwnerId)
+                .FirstOrDefaultAsync(ct);
             if (ownerId is null)
             {
                 throw new KeyNotFoundException($"Document {documentId} was not found.");

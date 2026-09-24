@@ -459,6 +459,12 @@ internal sealed class FakeDocumentAccess(bool all, IReadOnlyList<Guid> ids) : Ti
 
     public Task ReplacePermissionsAsync(Guid documentId, Guid actorId, bool isAdmin, IReadOnlyCollection<Guid> userIds, IReadOnlyCollection<string> roles, CancellationToken cancellationToken)
         => Task.CompletedTask;
+
+    public Task<DocumentPermissionsSnapshot> GetPermissionsAsync(Guid documentId, CancellationToken cancellationToken)
+        => Task.FromResult(new DocumentPermissionsSnapshot([], []));
+
+    public Task<Guid?> GetDocumentOwnerIdAsync(Guid documentId, CancellationToken cancellationToken)
+        => Task.FromResult<Guid?>(null);
 }
 
 internal sealed class FakeRoleRegistry(bool userHasAdmin = false) : TigerRAG.Application.Roles.IRoleRegistry
@@ -471,6 +477,9 @@ internal sealed class FakeRoleRegistry(bool userHasAdmin = false) : TigerRAG.App
 
     public Task<int> CountHoldersAsync(string name, CancellationToken cancellationToken)
         => Task.FromResult(1);
+
+    public Task<IReadOnlyCollection<string>> GetRoleNamesAsync(IReadOnlyCollection<Guid> roleIds, CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyCollection<string>>([]);
 }
 
 internal sealed class InMemoryKbDal : IKbDal
@@ -485,10 +494,14 @@ internal sealed class InMemoryKbDal : IKbDal
     public Task<KnowledgeBase?> FindAsync(Guid id, CancellationToken cancellationToken)
         => Task.FromResult(Entities.GetValueOrDefault(id));
 
-    public Task<IReadOnlyList<KnowledgeBaseSummary>> ListAsync(Guid actorId, bool isAdmin, CancellationToken cancellationToken)
+    public Task<IReadOnlyList<KnowledgeBaseSummary>> ListAsync(KbAccessScope scope, CancellationToken cancellationToken)
     {
         var query = Entities.Values.AsEnumerable();
-        if (!isAdmin) query = query.Where(kb => kb.OwnerId == actorId);
+        if (!scope.AllKnowledgeBase)
+        {
+            var accessibleIds = scope.KbIds.ToHashSet();
+            query = query.Where(kb => accessibleIds.Contains(kb.Id));
+        }
         return Task.FromResult<IReadOnlyList<KnowledgeBaseSummary>>(query
             .Select(kb => new KnowledgeBaseSummary(kb.Id, kb.Name, kb.Description, kb.OwnerId, null, 0, kb.CreatedAt))
             .ToList());
@@ -514,6 +527,10 @@ internal sealed class InMemoryKbDal : IKbDal
         Entities.Remove(kbId);
         return Task.CompletedTask;
     }
+
+    /// <summary>删除知识库的所有 ACL 行；内存 Fake 无需实际存储 ACL，直接返回完成。</summary>
+    public Task DeletePermissionsAsync(Guid kbId, CancellationToken cancellationToken)
+        => Task.CompletedTask;
 
     public Task<IReadOnlyList<Guid>> ListNonProcessingDocumentIdsAsync(Guid kbId, CancellationToken cancellationToken)
         => Task.FromResult<IReadOnlyList<Guid>>([]);

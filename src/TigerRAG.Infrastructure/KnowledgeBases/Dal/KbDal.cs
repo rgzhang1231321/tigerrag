@@ -19,14 +19,15 @@ public sealed class KbDal(TigerRagDbContext dbContext) : IKbDal
     }
 
     public async Task<IReadOnlyList<KnowledgeBaseSummary>> ListAsync(
-        Guid actorId,
-        bool isAdmin,
+        KbAccessScope scope,
         CancellationToken cancellationToken)
     {
         var query = dbContext.KnowledgeBases.AsNoTracking();
-        if (!isAdmin)
+        if (!scope.AllKnowledgeBase)
         {
-            query = query.Where(kb => kb.OwnerId == actorId);
+            // 按 KB ACL 过滤：仅返回用户可访问的 KB（Owner ∪ User ACL ∪ Role ACL）。
+            var accessibleIds = scope.KbIds.ToArray();
+            query = query.Where(kb => accessibleIds.Contains(kb.Id));
         }
 
         var records = await query
@@ -78,6 +79,14 @@ public sealed class KbDal(TigerRagDbContext dbContext) : IKbDal
     {
         await dbContext.KnowledgeBases
             .Where(kb => kb.Id == kbId)
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+
+    /// <summary>删除知识库的所有 ACL 行；级联删除时由业务代码在事务内调用。</summary>
+    public async Task DeletePermissionsAsync(Guid kbId, CancellationToken cancellationToken)
+    {
+        await dbContext.KnowledgeBasePermissions
+            .Where(permission => permission.KnowledgeBaseId == kbId)
             .ExecuteDeleteAsync(cancellationToken);
     }
 

@@ -17,8 +17,26 @@ public sealed class DocumentsController(
     {
         "application/pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+        "application/vnd.ms-outlook",
+        "application/vnd.oasis.opendocument.text",
+        "application/vnd.oasis.opendocument.presentation",
+        "application/vnd.oasis.opendocument.spreadsheet",
         "text/markdown",
         "text/plain",
+        "text/csv",
+        "text/html",
+        "message/rfc822",
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/bmp",
+        "image/tiff",
+        "image/svg+xml",
     };
 
     private const long MaxFileSizeBytes = 30L * 1024 * 1024;

@@ -27,8 +27,26 @@ public sealed class DocumentService(
     {
         "application/pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+        "application/vnd.ms-outlook",
+        "application/vnd.oasis.opendocument.text",
+        "application/vnd.oasis.opendocument.presentation",
+        "application/vnd.oasis.opendocument.spreadsheet",
         "text/markdown",
         "text/plain",
+        "text/csv",
+        "text/html",
+        "message/rfc822",
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/bmp",
+        "image/tiff",
+        "image/svg+xml",
     };
 
     /// <summary>单文档大小上限（30MB）；超过即拒绝。</summary>
@@ -182,13 +200,13 @@ public sealed class DocumentService(
             var document = await documentQueryDal.FindSummaryAsync(id, ct)
                 ?? throw new KeyNotFoundException($"文档 {id} 不存在。");
 
+            // 仅 KB 拥有者可删除文档；ACL 授权用户仅有只读访问权。
             if (!isAdmin)
             {
-                var scope = await documentAccess.GetScopeAsync(actor.Id, roles, ct);
                 var isOwner = await IsKbOwnerAsync(document.KbId, actor.Id, ct);
-                if (!isOwner && (!scope.AllDocuments && !scope.DocumentIds.Contains(id)))
+                if (!isOwner)
                 {
-                    throw new UnauthorizedAccessException("无权限删除此文档。");
+                    throw new UnauthorizedAccessException("仅知识库拥有者可删除文档。");
                 }
             }
 
@@ -243,11 +261,11 @@ public sealed class DocumentService(
                 var document = await documentQueryDal.FindSummaryAsync(id, ct)
                     ?? throw new KeyNotFoundException($"文档 {id} 不存在。");
 
+                // 仅 KB 拥有者可删除文档；ACL 授权用户仅有只读访问权。
                 if (!isAdmin)
                 {
-                    var scope = await documentAccess.GetScopeAsync(actor.Id, roles, ct);
                     var isOwner = await IsKbOwnerAsync(document.KbId, actor.Id, ct);
-                    if (!isOwner && (!scope.AllDocuments && !scope.DocumentIds.Contains(id)))
+                    if (!isOwner)
                     {
                         throw new UnauthorizedAccessException($"无权限删除文档「{document.FileName}」。");
                     }

@@ -227,4 +227,5 @@ export const queryKeys = {
   roleEndpoints: (role: string) => ['role-endpoints', role] as const,
   knowledgeBases: ['knowledge-bases'] as const,
   documents: (kbId: string | null) => ['documents', kbId ?? 'all'] as const,
+  documentPermissions: (documentId: string) => ['document-permissions', documentId] as const,
 }

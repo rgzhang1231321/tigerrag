@@ -26,6 +26,29 @@ public sealed class DocumentAccessService(
         return new DocumentAccessScope(false, documentIds);
     }
 
+    /// <summary>查询文档当前 ACL；返回用户 Id 与角色名集合。授权规则同 ReplacePermissions。</summary>
+    public async Task<DocumentPermissionsDto> GetPermissionsAsync(
+        Guid documentId,
+        Guid actorId,
+        bool isAdmin,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = await documentAccess.GetDocumentOwnerIdAsync(documentId, cancellationToken);
+        if (ownerId is null)
+        {
+            throw new KeyNotFoundException($"Document {documentId} was not found.");
+        }
+        if (!isAdmin && ownerId != actorId)
+        {
+            throw new UnauthorizedAccessException("Only the knowledge base owner can view document permissions.");
+        }
+
+        var snapshot = await documentAccess.GetPermissionsAsync(documentId, cancellationToken);
+        var roleNames = await roleRegistry.GetRoleNamesAsync(snapshot.RoleIds, cancellationToken);
+
+        return new DocumentPermissionsDto(snapshot.UserIds, roleNames);
+    }
+
     /// <summary>替换文档 ACL；仅 Admin 或 KB 拥有者可调用，由 DAL 内部校验。</summary>
     public Task ReplacePermissionsAsync(
         Guid documentId,

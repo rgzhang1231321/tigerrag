@@ -1,7 +1,7 @@
 import { queryKeys } from '../../app/http'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { deleteDoc, batchDeleteDocs, listDocs, reindexDoc, uploadDoc, getDocContent } from './documentApi'
-import type { DocumentDto, DocumentListPage } from './documentApi'
+import { deleteDoc, batchDeleteDocs, listDocs, reindexDoc, uploadDoc, getDocContent, getDocPermissions, replaceDocPermissions } from './documentApi'
+import type { DocumentDto, DocumentListPage, DocumentPermissionsDto } from './documentApi'
 
 /// <summary>列出指定 KB 下当前用户可见的文档；按 ACL 过滤。</summary>
 export function useDocuments(kbId: string | null) {
@@ -68,5 +68,37 @@ export function useDocumentContent(id: string | null) {
     queryFn: () => getDocContent(id!),
     enabled: !!id,
     retry: 1,
+  })
+}
+
+/// <summary>查询文档权限状态；失败返回 null 触发降级模式。</summary>
+export function useDocumentPermissions(documentId: string | null) {
+  return useQuery<DocumentPermissionsDto | null>({
+    queryKey: queryKeys.documentPermissions(documentId ?? ''),
+    queryFn: () => getDocPermissions(documentId!),
+    enabled: !!documentId,
+    retry: 1,
+  })
+}
+
+/// <summary>替换文档权限；成功后让该文档权限缓存失效。</summary>
+export function useReplaceDocumentPermissions() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: {
+      documentId: string
+      userIds: string[]
+      roles: string[]
+    }): Promise<null> => {
+      return replaceDocPermissions(input.documentId, {
+        userIds: input.userIds,
+        roles: input.roles,
+      })
+    },
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.documentPermissions(variables.documentId),
+      })
+    },
   })
 }

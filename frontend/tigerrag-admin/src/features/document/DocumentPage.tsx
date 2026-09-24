@@ -34,12 +34,31 @@ import {
   useDocumentContent,
 } from "./useDocuments";
 import type { DocumentDto } from "./documentApi";
+import { DocumentPermissionModal } from "./DocumentPermissionModal";
 
 const ALLOWED_MIME = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "application/vnd.ms-outlook",
+  "application/vnd.oasis.opendocument.text",
+  "application/vnd.oasis.opendocument.presentation",
+  "application/vnd.oasis.opendocument.spreadsheet",
   "text/markdown",
   "text/plain",
+  "text/csv",
+  "text/html",
+  "message/rfc822",
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/bmp",
+  "image/tiff",
+  "image/svg+xml",
 ]);
 
 const MAX_FILE_SIZE_BYTES = 30 * 1024 * 1024;
@@ -91,6 +110,7 @@ export function DocumentPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [previewDoc, setPreviewDoc] = useState<DocumentDto | null>(null);
+  const [permissionDoc, setPermissionDoc] = useState<DocumentDto | null>(null);
   const contentQuery = useDocumentContent(previewDoc?.id ?? null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -242,7 +262,7 @@ export function DocumentPage() {
             type="link"
             style={{ padding: "0 4px" }}
             icon={<LockOutlined />}
-            onClick={() => message.info("权限管理未实现")}
+            onClick={() => setPermissionDoc(doc)}
           >
             权限
           </Button>
@@ -369,7 +389,7 @@ export function DocumentPage() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pdf,.docx,.md,.txt"
+        accept=".pdf,.docx,.doc,.pptx,.xlsx,.xls,.odt,.ods,.odp,.eml,.msg,.md,.txt,.csv,.html,.htm,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff,.tiff,.svg"
         multiple
         style={{ display: "none" }}
         onChange={handleFileSelect}
@@ -520,7 +540,7 @@ export function DocumentPage() {
       )}
       <Table<DocumentDto>
         rowKey="id"
-        loading={docsLoading}
+        loading={docsLoading && effectiveKbId !== null}
         dataSource={filtered}
         columns={columns}
         pagination={{ pageSize: 20, showSizeChanger: false }}
@@ -587,6 +607,12 @@ export function DocumentPage() {
           </div>
         )}
       </Drawer>
+      <DocumentPermissionModal
+        documentId={permissionDoc?.id ?? ''}
+        fileName={permissionDoc?.fileName ?? ''}
+        open={permissionDoc !== null}
+        onClose={() => setPermissionDoc(null)}
+      />
       {dragOver && (
         <div
           className="drag-overlay"

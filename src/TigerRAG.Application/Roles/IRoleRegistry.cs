@@ -11,4 +11,9 @@ public interface IRoleRegistry
 
     /// <summary>列出持有指定角色的用户数；用于自我降级保护等"是否还有别人持有"判定。</summary>
     Task<int> CountHoldersAsync(string name, CancellationToken cancellationToken);
+
+    /// <summary>按角色 Id 批量获取角色名；供 ACL 快照的 Id→Name 映射使用。</summary>
+    Task<IReadOnlyCollection<string>> GetRoleNamesAsync(
+        IReadOnlyCollection<Guid> roleIds,
+        CancellationToken cancellationToken);
 }

@@ -101,6 +101,8 @@ public static class InfrastructureComposition
         services.AddScoped<IKbDal, KbDal>();
         services.AddScoped<IUserLookup, UserLookup>();
         services.AddScoped<KnowledgeBaseService>();
+        services.AddScoped<IKbAccessDal, KbAccessDal>();
+        services.AddScoped<KnowledgeBaseAccessService>();
         // 角色-Endpoint 授权缓存 L1：键 auth:role:{role}:endpoints（Redis Set），TTL 默认 5 分钟，由装饰器在写路径失效。
         services.AddScoped<RoleEndpointGrantStore>();
         services.AddScoped<IRoleEndpointGrantStore>(sp => new CachedRoleEndpointGrantStore(

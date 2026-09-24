@@ -80,3 +80,28 @@ export interface DocumentContentDto {
 export function getDocContent(id: string): Promise<DocumentContentDto> {
   return http<DocumentContentDto>(`/api/documents/${encodeURIComponent(id)}/content`, { method: 'POST' })
 }
+
+/// <summary>文档权限状态 DTO：与后端 DocumentPermissionsDto 一一对应。</summary>
+export interface DocumentPermissionsDto {
+  userIds: string[]
+  roles: string[]
+}
+
+/// <summary>查询文档当前 ACL 状态；返回 null 表示加载失败（降级模式）。</summary>
+export function getDocPermissions(documentId: string): Promise<DocumentPermissionsDto | null> {
+  return http<DocumentPermissionsDto>(
+    `/api/documents/${encodeURIComponent(documentId)}/permissions`,
+    { method: 'GET' },
+  ).catch(() => null)
+}
+
+/// <summary>替换文档权限（整体替换语义）。</summary>
+export function replaceDocPermissions(
+  documentId: string,
+  input: { userIds: string[]; roles: string[] },
+): Promise<null> {
+  return http<null>(`/api/documents/${encodeURIComponent(documentId)}/permissions`, {
+    method: 'POST',
+    body: input,
+  })
+}

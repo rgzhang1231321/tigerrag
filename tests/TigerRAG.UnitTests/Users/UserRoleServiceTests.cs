@@ -681,5 +681,8 @@ public sealed class UserRoleServiceTests
 
         public Task<int> CountHoldersAsync(string name, CancellationToken cancellationToken) =>
             Task.FromResult(_holders);
+
+        public Task<IReadOnlyCollection<string>> GetRoleNamesAsync(IReadOnlyCollection<Guid> roleIds, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyCollection<string>>([]);
     }
 }

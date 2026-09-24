@@ -2,21 +2,21 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using TigerRAG.Api.Common;
 using TigerRAG.Application.Auth;
-using TigerRAG.Application.Documents;
+using TigerRAG.Application.KnowledgeBases;
 
-namespace TigerRAG.Api.Controllers.Documents;
+namespace TigerRAG.Api.Controllers.KnowledgeBases;
 
-/// <summary>文档 ACL 替换端点。仅依赖 <see cref="DocumentAccessService"/>，不触发 <c>DocumentService</c> 的基础设施依赖（MinIO/Redis/Qdrant），保证单测与集成测试环境在 MinIO 未配置时仍可访问权限端点。</summary>
+/// <summary>KB ACL 替换端点。仅依赖 <see cref="KnowledgeBaseAccessService"/>，不触发 MinIO/Redis/Qdrant 依赖，保证单测与集成测试环境在 MinIO 未配置时仍可访问权限端点。</summary>
 [ApiController]
-[Route("api/documents")]
-public sealed class DocumentPermissionsController(
-    DocumentAccessService documentAccess) : ControllerBase
+[Route("api/knowledge-bases")]
+public sealed class KnowledgeBasePermissionsController(
+    KnowledgeBaseAccessService kbAccess) : ControllerBase
 {
-    /// <summary>获取指定文档的当前 ACL 状态；授权规则同 ReplacePermissions。</summary>
-    [HttpGet("{documentId:guid}/permissions")]
-    [MenuEndpoint("documents", "documents.permissions.get", "查询文档权限")]
+    /// <summary>获取指定 KB 的当前 ACL 状态；授权规则同 ReplacePermissions。</summary>
+    [HttpGet("{kbId:guid}/permissions")]
+    [MenuEndpoint("knowledgeBases", "knowledgeBases.permissions.get", "查询知识库权限")]
     public async Task<IActionResult> GetPermissions(
-        Guid documentId,
+        Guid kbId,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId))
@@ -27,8 +27,8 @@ public sealed class DocumentPermissionsController(
         var isAdmin = User.IsInRole("Admin");
         try
         {
-            var permissions = await documentAccess.GetPermissionsAsync(
-                documentId,
+            var permissions = await kbAccess.GetPermissionsAsync(
+                kbId,
                 actorId,
                 isAdmin,
                 cancellationToken);
@@ -36,7 +36,7 @@ public sealed class DocumentPermissionsController(
         }
         catch (KeyNotFoundException)
         {
-            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, "文档不存在"));
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, "知识库不存在"));
         }
         catch (UnauthorizedAccessException error)
         {
@@ -44,12 +44,12 @@ public sealed class DocumentPermissionsController(
         }
     }
 
-    /// <summary>替换指定文档的用户和角色访问权限。</summary>
-    [HttpPost("{documentId:guid}/permissions")]
-    [MenuEndpoint("documents", "documents.permissions.replace", "替换文档权限")]
+    /// <summary>替换指定 KB 的用户和角色访问权限。</summary>
+    [HttpPost("{kbId:guid}/permissions")]
+    [MenuEndpoint("knowledgeBases", "knowledgeBases.permissions.replace", "替换知识库权限")]
     public async Task<IActionResult> ReplacePermissions(
-        Guid documentId,
-        ReplaceDocumentPermissionsRequest request,
+        Guid kbId,
+        ReplaceKbPermissionsRequest request,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId))
@@ -60,8 +60,8 @@ public sealed class DocumentPermissionsController(
         var isAdmin = User.IsInRole("Admin");
         try
         {
-            await documentAccess.ReplacePermissionsAsync(
-                documentId,
+            await kbAccess.ReplacePermissionsAsync(
+                kbId,
                 actorId,
                 isAdmin,
                 request.UserIds,
@@ -79,7 +79,7 @@ public sealed class DocumentPermissionsController(
         }
         catch (KeyNotFoundException)
         {
-            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, "文档不存在"));
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, "知识库不存在"));
         }
     }
 }

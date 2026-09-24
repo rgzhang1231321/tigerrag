@@ -27,10 +27,19 @@ public sealed class RoleRegistry(TigerRagDbContext dbContext) : IRoleRegistry
             return false;
         }
         var normalized = name.ToUpperInvariant();
+
+        // 先按归一化名称查角色拿到 Id，再查 UserRoles 判断关联；避免 DB 级 JOIN。
+        var roleId = await dbContext.Roles
+            .Where(role => role.NormalizedName == normalized)
+            .Select(role => (Guid?)role.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (roleId is null)
+        {
+            return false;
+        }
+
         return await dbContext.UserRoles
-            .Where(ur => ur.UserId == userId)
-            .Join(dbContext.Roles, ur => ur.RoleId, role => role.Id, (ur, role) => role)
-            .AnyAsync(role => role.NormalizedName == normalized, cancellationToken);
+            .AnyAsync(ur => ur.UserId == userId && ur.RoleId == roleId.Value, cancellationToken);
     }
 
     public async Task<int> CountHoldersAsync(string name, CancellationToken cancellationToken)
@@ -52,5 +61,22 @@ public sealed class RoleRegistry(TigerRagDbContext dbContext) : IRoleRegistry
         return await dbContext.UserRoles
             .Where(ur => ur.RoleId == roleId.Value)
             .CountAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<string>> GetRoleNamesAsync(
+        IReadOnlyCollection<Guid> roleIds,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (roleIds.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+        return await dbContext.Roles
+            .Where(role => roleIds.Contains(role.Id))
+            .Select(role => role.Name!)
+            .Where(name => name != null)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
     }
 }
