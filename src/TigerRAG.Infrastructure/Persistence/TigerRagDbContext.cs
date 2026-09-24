@@ -78,7 +78,7 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
             entity.ToTable("document_record");
             entity.Property(value => value.FileName).HasMaxLength(500);
             entity.Property(value => value.StoragePath).HasMaxLength(1000);
-            entity.Property(value => value.MimeType).HasMaxLength(128);
+            entity.Property(value => value.MimeType).HasColumnName("mime_type").HasMaxLength(128);
             entity.Property(value => value.Status).HasConversion<string>().HasMaxLength(32);
             entity.HasOne<knowledge_base_record>().WithMany().HasForeignKey(value => value.KnowledgeBaseId);
             entity.HasOne<AppUser>().WithMany().HasForeignKey(value => value.CreatedBy).OnDelete(DeleteBehavior.Restrict);

@@ -244,4 +244,35 @@ public sealed class DocumentsController(
             return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Validation, ex.Message));
         }
     }
+
+    /// <summary>单篇重索引：Status 重置为 Pending 并入队；Processing 时拒绝。</summary>
+    [HttpPost("{documentId:guid}/reindex")]
+    [MenuEndpoint("documents", "documents.reindex", "重新索引文档")]
+    public async Task<ActionResult<ApiResponse<object?>>> Reindex(Guid documentId, CancellationToken cancellationToken)
+    {
+        if (!HttpContext.TryGetActor(out var actor) || actor is null)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Unauthorized, "用户身份无效"));
+        }
+
+        var roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToArray();
+        var isAdmin = User.IsInRole("Admin");
+        try
+        {
+            await service.ReindexAsync(documentId, actor, roles, isAdmin, cancellationToken);
+            return Ok(ApiResponse<object?>.Success(null));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.NotFound, ex.Message));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Forbidden, ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Ok(ApiResponse<object?>.Failure(FlagStatesOption.Conflict, ex.Message));
+        }
+    }
 }

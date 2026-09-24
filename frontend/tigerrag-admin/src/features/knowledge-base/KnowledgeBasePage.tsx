@@ -29,6 +29,7 @@ import {
   useUpdateKb,
   useBatchDeleteKbs,
 } from "./useKnowledgeBases";
+import { useAuthStore } from "../auth/authStore";
 import type { KnowledgeBaseDto } from "./knowledgeBaseApi";
 import { KnowledgeBasePermissionModal } from "./KnowledgeBasePermissionModal";
 
@@ -49,6 +50,7 @@ function renderOwner(kb: KnowledgeBaseDto) {
 /// <summary>知识库管理页：列表 + 筛选 + 批量选择 + 创建/编辑弹窗 + 权限弹窗 + 删除确认。</summary>
 export function KnowledgeBasePage() {
   const navigate = useNavigate();
+  const currentUser = useAuthStore((state) => state.user);
   const { data: kbs = [], isPending, refetch } = useKnowledgeBases();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<
@@ -124,7 +126,6 @@ export function KnowledgeBasePage() {
           onClick={() => navigate(`/documents?kbId=${kb.id}`)}
         >
           <Space>
-            <span style={{ color: "var(--text-secondary)" }}>i</span>
             <span style={{ color: "var(--brand-secondary)" }}>{kb.name}</span>
           </Space>
         </Button>
@@ -161,74 +162,88 @@ export function KnowledgeBasePage() {
       title: "操作",
       key: "actions",
       width: 450,
-      render: (_value, kb) => (
-        <Space>
-          <Button
-            type="link"
-            style={{ padding: "0 4px" }}
-            icon={<EyeOutlined />}
-            onClick={() => navigate(`/documents?kbId=${kb.id}`)}
-          >
-            查看
-          </Button>
-          <Button
-            type="link"
-            style={{ padding: "0 4px" }}
-            icon={<ReloadOutlined />}
-            loading={
-              reindexMutation.isPending && reindexMutation.variables === kb.id
-            }
-            onClick={() =>
-              reindexMutation.mutate(kb.id, {
-                onSuccess: () => message.success(`已提交重新索引：${kb.name}`),
-              })
-            }
-          >
-            重新索引
-          </Button>
-          <Button
-            type="link"
-            style={{ padding: "0 4px" }}
-            icon={<EditOutlined />}
-            onClick={() => setMode({ edit: kb })}
-          >
-            编辑
-          </Button>
-          <Button
-            type="link"
-            style={{ padding: "0 4px" }}
-            icon={<LockOutlined />}
-            onClick={() => setPermissionKb(kb)}
-          >
-            权限
-          </Button>
-          <Popconfirm
-            title="删除知识库"
-            description={
-              kb.documentCount > 0
-                ? `删除「${kb.name}」将同时删除 ${kb.documentCount} 个文档与对应向量，且不可恢复。确认删除？`
-                : `确认删除「${kb.name}」？该操作不可撤销。`
-            }
-            okText="确认删除"
-            cancelText="取消"
-            okButtonProps={{ danger: true, loading: deleteMutation.isPending }}
-            onConfirm={() =>
-              deleteMutation.mutate(kb.id, {
-                onSuccess: () => message.success(`已删除：${kb.name}`),
-              })
-            }
-          >
+      render: (_value, kb) => {
+        const canManage =
+          currentUser?.roles.includes("Admin") === true ||
+          kb.ownerId === currentUser?.id;
+        return (
+          <Space>
             <Button
               type="link"
-              danger
               style={{ padding: "0 4px" }}
-              icon={<DeleteOutlined />}
+              icon={<EyeOutlined />}
+              onClick={() => navigate(`/documents?kbId=${kb.id}`)}
             >
-              删除
+              查看
             </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            {canManage && (
+              <>
+                <Button
+                  type="link"
+                  style={{ padding: "0 4px" }}
+                  icon={<ReloadOutlined />}
+                  loading={
+                    reindexMutation.isPending &&
+                    reindexMutation.variables === kb.id
+                  }
+                  onClick={() =>
+                    reindexMutation.mutate(kb.id, {
+                      onSuccess: () =>
+                        message.success(`已提交重新索引：${kb.name}`),
+                    })
+                  }
+                >
+                  重新索引
+                </Button>
+                <Button
+                  type="link"
+                  style={{ padding: "0 4px" }}
+                  icon={<EditOutlined />}
+                  onClick={() => setMode({ edit: kb })}
+                >
+                  编辑
+                </Button>
+                <Button
+                  type="link"
+                  style={{ padding: "0 4px" }}
+                  icon={<LockOutlined />}
+                  onClick={() => setPermissionKb(kb)}
+                >
+                  权限
+                </Button>
+                <Popconfirm
+                  title="删除知识库"
+                  description={
+                    kb.documentCount > 0
+                      ? `删除「${kb.name}」将同时删除 ${kb.documentCount} 个文档与对应向量，且不可恢复。确认删除？`
+                      : `确认删除「${kb.name}」？该操作不可撤销。`
+                  }
+                  okText="确认删除"
+                  cancelText="取消"
+                  okButtonProps={{
+                    danger: true,
+                    loading: deleteMutation.isPending,
+                  }}
+                  onConfirm={() =>
+                    deleteMutation.mutate(kb.id, {
+                      onSuccess: () => message.success(`已删除：${kb.name}`),
+                    })
+                  }
+                >
+                  <Button
+                    type="link"
+                    danger
+                    style={{ padding: "0 4px" }}
+                    icon={<DeleteOutlined />}
+                  >
+                    删除
+                  </Button>
+                </Popconfirm>
+              </>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 

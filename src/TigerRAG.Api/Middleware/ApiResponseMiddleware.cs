@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using TigerRAG.Api.Filters;
 using TigerRAG.Api.Common;
 using TigerRAG.Infrastructure.Logging;
 
@@ -59,7 +60,9 @@ public sealed class ApiResponseMiddleware(RequestDelegate next, ILogger<ApiRespo
         context.Response.ContentType = "application/json; charset=utf-8";
         var response = ApiResponse<object?>.Failure(
             ApiResponse.FromHttpStatus(originalStatusCode),
-            errorMessage);
+            string.IsNullOrEmpty(errorMessage)
+                ? ApiResponseFilter.DefaultMessageForStatus(originalStatusCode)
+                : errorMessage);
         var withRequestId = response.WithRequestId(requestId);
         await JsonSerializer.SerializeAsync(
             originalBody,

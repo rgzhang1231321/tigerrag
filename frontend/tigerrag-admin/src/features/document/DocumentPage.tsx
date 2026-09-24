@@ -25,6 +25,7 @@ import {
 import { useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useKnowledgeBases } from "../knowledge-base/useKnowledgeBases";
+import { useAuthStore } from "../auth/authStore";
 import {
   useDeleteDocument,
   useDocuments,
@@ -81,6 +82,7 @@ function formatFileSize(bytes: number): string {
 export function DocumentPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const currentUser = useAuthStore((state) => state.user);
   const { data: kbs = [], isPending: kbsLoading } = useKnowledgeBases();
 
   const selectedKbId = searchParams.get("kbId") ?? null;
@@ -231,66 +233,75 @@ export function DocumentPage() {
       title: "操作",
       key: "actions",
       width: 320,
-      render: (_value, doc) => (
-        <Space>
-          <Button
-            type="link"
-            style={{ padding: "0 4px" }}
-            icon={<EyeOutlined />}
-            onClick={() => setPreviewDoc(doc)}
-          >
-            预览
-          </Button>
-          <Button
-            type="link"
-            style={{ padding: "0 4px" }}
-            icon={<ReloadOutlined />}
-            disabled={doc.status === "Processing"}
-            loading={
-              reindexMutation.isPending && reindexMutation.variables === doc.id
-            }
-            onClick={() =>
-              reindexMutation.mutate(doc.id, {
-                onSuccess: () =>
-                  message.success(`已提交重新索引：${doc.fileName}`),
-              })
-            }
-          >
-            重索引
-          </Button>
-          <Button
-            type="link"
-            style={{ padding: "0 4px" }}
-            icon={<LockOutlined />}
-            onClick={() => setPermissionDoc(doc)}
-          >
-            权限
-          </Button>
-          <Popconfirm
-            title="删除文档"
-            description={`确认删除「${doc.fileName}」？该操作不可撤销。`}
-            okText="确认删除"
-            cancelText="取消"
-            okButtonProps={{ danger: true, loading: deleteMutation.isPending }}
-            onConfirm={() =>
-              deleteMutation.mutate(doc.id, {
-                onSuccess: () => message.success(`已删除：${doc.fileName}`),
-              })
-            }
-            disabled={doc.status === "Processing"}
-          >
+      render: (_value, doc) => {
+        const canManage =
+          currentUser?.roles.includes("Admin") === true ||
+          currentKb?.ownerId === currentUser?.id;
+        return (
+          <Space>
             <Button
               type="link"
-              danger
               style={{ padding: "0 4px" }}
-              icon={<DeleteOutlined />}
-              disabled={doc.status === "Processing"}
+              icon={<EyeOutlined />}
+              onClick={() => setPreviewDoc(doc)}
             >
-              删除
+              预览
             </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            {canManage && (
+              <>
+                <Button
+                  type="link"
+                  style={{ padding: "0 4px" }}
+                  icon={<ReloadOutlined />}
+                  disabled={doc.status === "Processing"}
+                  loading={
+                    reindexMutation.isPending && reindexMutation.variables === doc.id
+                  }
+                  onClick={() =>
+                    reindexMutation.mutate(doc.id, {
+                      onSuccess: () =>
+                        message.success(`已提交重新索引：${doc.fileName}`),
+                    })
+                  }
+                >
+                  重索引
+                </Button>
+                <Button
+                  type="link"
+                  style={{ padding: "0 4px" }}
+                  icon={<LockOutlined />}
+                  onClick={() => setPermissionDoc(doc)}
+                >
+                  权限
+                </Button>
+                <Popconfirm
+                  title="删除文档"
+                  description={`确认删除「${doc.fileName}」？该操作不可撤销。`}
+                  okText="确认删除"
+                  cancelText="取消"
+                  okButtonProps={{ danger: true, loading: deleteMutation.isPending }}
+                  onConfirm={() =>
+                    deleteMutation.mutate(doc.id, {
+                      onSuccess: () => message.success(`已删除：${doc.fileName}`),
+                    })
+                  }
+                  disabled={doc.status === "Processing"}
+                >
+                  <Button
+                    type="link"
+                    danger
+                    style={{ padding: "0 4px" }}
+                    icon={<DeleteOutlined />}
+                    disabled={doc.status === "Processing"}
+                  >
+                    删除
+                  </Button>
+                </Popconfirm>
+              </>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 

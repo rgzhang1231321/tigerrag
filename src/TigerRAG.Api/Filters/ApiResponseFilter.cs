@@ -72,4 +72,7 @@ public sealed class ApiResponseFilter(ILogger<ApiResponseFilter> logger) : IAsyn
         501 => "功能尚未实现",
         _ => "服务内部错误"
     };
+
+    /// <summary>按 HTTP 状态码返回默认错误消息；供中间件在无异常兜底时使用。</summary>
+    internal static string DefaultMessageForStatus(int statusCode) => MessageForStatus(statusCode);
 }
