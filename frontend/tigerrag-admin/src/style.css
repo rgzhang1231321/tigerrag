@@ -473,6 +473,56 @@ body {
   font-size: 12px;
   color: var(--text-secondary);
 }
+.upload-dropzone--empty {
+  padding: 60px 20px;
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  background: var(--card-bg);
+  transition: border-color 0.2s;
+}
+.upload-dropzone--empty:hover {
+  border-color: var(--brand-secondary);
+}
+
+/* ====== Drag Overlay (全屏浮层，有数据时拖拽触发) ====== */
+.drag-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(26, 76, 51, 0.12);
+  backdrop-filter: blur(2px);
+  animation: drag-overlay-in 0.15s ease-out;
+}
+@keyframes drag-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.drag-overlay-inner {
+  text-align: center;
+  padding: 48px 64px;
+  border: 2px dashed var(--brand-secondary);
+  border-radius: 12px;
+  background: var(--card-bg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+.drag-overlay-icon {
+  font-size: 56px;
+  color: var(--brand-secondary);
+  margin-bottom: 16px;
+}
+.drag-overlay-text {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+.drag-overlay-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
 
 .users-search {
   max-width: 320px;

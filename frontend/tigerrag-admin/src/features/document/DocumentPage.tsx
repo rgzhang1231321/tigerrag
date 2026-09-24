@@ -10,11 +10,9 @@ import {
   Space,
   Table,
   Tag,
-  Upload,
   message,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import type { UploadProps } from 'antd'
 import {
   CloudUploadOutlined,
   DeleteOutlined,
@@ -23,7 +21,7 @@ import {
   LockOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useKnowledgeBases } from '../knowledge-base/useKnowledgeBases'
 import { useDeleteDocument, useDocuments, useReindexDocument, useUploadDocument } from './useDocuments'
@@ -80,6 +78,8 @@ export function DocumentPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [previewDoc, setPreviewDoc] = useState<DocumentDto | null>(null)
+  const [dragOver, setDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const filtered = useMemo(
     () => documents.filter((doc) => {
@@ -228,42 +228,101 @@ export function DocumentPage() {
     },
   ]
 
-  const uploadProps: UploadProps = {
-    multiple: false,
-    showUploadList: false,
-    beforeUpload: (file) => {
-      if (effectiveKbId === null) {
-        message.error('请先选择知识库')
-        return Upload.LIST_IGNORE
-      }
-      if (!ALLOWED_MIME.has(file.type)) {
-        message.error(`不支持的 MIME 类型：${file.type || '未知'}`)
-        return Upload.LIST_IGNORE
-      }
-      if (file.size > MAX_FILE_SIZE_BYTES) {
-        message.error(`文件大小 ${file.size} 字节超过 30MB 上限`)
-        return Upload.LIST_IGNORE
-      }
-      return true
-    },
-    customRequest: async ({ file, onSuccess, onError }) => {
-      if (effectiveKbId === null || !(file instanceof File)) {
-        onError?.(new Error('无效的上传请求'))
-        return
-      }
-      try {
-        await uploadMutation.mutateAsync({ kbId: effectiveKbId, file })
-        message.success(`已上传：${file.name}`)
-        onSuccess?.(file)
-      } catch (mutationError) {
-        message.error(mutationError instanceof Error ? mutationError.message : '上传失败')
-        onError?.(mutationError instanceof Error ? mutationError : new Error('上传失败'))
-      }
-    },
+  /// <summary>处理文件上传：校验后调用 mutation。</summary>
+  async function handleFileUpload(
+    file: File,
+    onSuccess?: (response: unknown, file?: File) => void,
+    onError?: (error: Error) => void,
+  ) {
+    if (effectiveKbId === null) {
+      message.error('请先选择知识库')
+      onError?.(new Error('无效的上传请求'))
+      return
+    }
+    if (!ALLOWED_MIME.has(file.type)) {
+      message.error(`不支持的 MIME 类型：${file.type || '未知'}`)
+      onError?.(new Error('不支持的文件类型'))
+      return
+    }
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      message.error(`文件大小超过 30MB 上限`)
+      onError?.(new Error('文件过大'))
+      return
+    }
+    try {
+      await uploadMutation.mutateAsync({ kbId: effectiveKbId, file })
+      message.success(`已上传：${file.name}`)
+      onSuccess?.(file)
+    } catch (mutationError) {
+      message.error(mutationError instanceof Error ? mutationError.message : '上传失败')
+      onError?.(mutationError instanceof Error ? mutationError : new Error('上传失败'))
+    }
+  }
+
+  /// <summary>处理拖拽文件：校验后上传。</summary>
+  function handleDrop(event: React.DragEvent) {
+    event.preventDefault()
+    event.stopPropagation()
+    setDragOver(false)
+    if (effectiveKbId === null) {
+      message.error('请先选择知识库')
+      return
+    }
+    const file = event.dataTransfer.files[0]
+    if (file) {
+      void handleFileUpload(file)
+    }
+  }
+
+  /// <summary>处理拖拽进入页面。</summary>
+  function handleDragOver(event: React.DragEvent) {
+    event.preventDefault()
+    event.stopPropagation()
+    if (effectiveKbId !== null && !dragOver) {
+      setDragOver(true)
+    }
+  }
+
+  /// <summary>处理拖拽离开页面。</summary>
+  function handleDragLeave(event: React.DragEvent) {
+    event.preventDefault()
+    event.stopPropagation()
+    // 仅当离开整个页面区域时才隐藏浮层
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+    const x = event.clientX
+    const y = event.clientY
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setDragOver(false)
+    }
+  }
+
+  /// <summary>处理点击上传按钮。</summary>
+  function triggerFileSelect() {
+    fileInputRef.current?.click()
+  }
+
+  /// <summary>处理文件选择变更。</summary>
+  function handleFileSelect(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (file) {
+      void handleFileUpload(file)
+    }
+    event.target.value = ''
   }
 
   return (
-    <main>
+    <main
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.docx,.md,.txt"
+        style={{ display: 'none' }}
+        onChange={handleFileSelect}
+      />
       <div className="page-title-bar">
         <span className="page-title">文档管理</span>
       </div>
@@ -294,19 +353,7 @@ export function DocumentPage() {
         <MetricCard title="处理中" value={stats.processing} icon="⏳" color="#1677ff" />
         <MetricCard title="失败" value={stats.failed} icon="❌" color="#ff4d4f" />
       </div>
-      <Upload.Dragger
-        {...uploadProps}
-        disabled={effectiveKbId === null}
-        className="upload-dropzone"
-        style={{marginBottom: "24px"}}
-      >
-        <div className="upload-dropzone-inner">
-          <CloudUploadOutlined className="upload-dropzone-icon" />
-          <div className="upload-dropzone-text">拖拽文件到此处，或点击上传</div>
-          <div className="upload-dropzone-hint">支持 PDF / Word / Markdown / TXT，单文件不超过 30MB</div>
-        </div>
-      </Upload.Dragger>
-      <div className="users-toolbar">
+      <div  style={{ margin: "24px 0" }} className="users-toolbar">
         <Select
           placeholder="选择知识库"
           loading={kbsLoading}
@@ -316,7 +363,7 @@ export function DocumentPage() {
           options={kbs.map((kb) => ({ value: kb.id, label: kb.name }))}
           disabled={kbs.length === 0}
         />
-        <Input.Search
+        <Input.Search style={{marginLeft:"24px"}}
           allowClear
           placeholder="按文件名过滤"
           value={search}
@@ -324,10 +371,10 @@ export function DocumentPage() {
           className="users-search"
           disabled={effectiveKbId === null}
         />
-        <Select
+        <Select 
           value={statusFilter}
           onChange={setStatusFilter}
-          style={{ minWidth: 140 }}
+          style={{ minWidth: 140,marginLeft:"24px"}}
           disabled={effectiveKbId === null}
           options={[
             { value: 'all', label: '全部状态' },
@@ -337,9 +384,13 @@ export function DocumentPage() {
             { value: 'Failed', label: '失败' },
           ]}
         />
-        <Button onClick={() => void refetch()} disabled={effectiveKbId === null}>
+        <Button  style={{marginLeft:"24px"}} onClick={() => void refetch()} disabled={effectiveKbId === null}>
           刷新
         </Button>
+        <Button style={{float: "right"}} type="primary" icon={<CloudUploadOutlined />} disabled={effectiveKbId === null} onClick={triggerFileSelect}>
+          上传文档
+        </Button>
+        <div style={{ flex: 1 }} />
       </div>
       {selectedIds.size > 0 && (
         <div className="batch-action-bar">
@@ -363,7 +414,7 @@ export function DocumentPage() {
         dataSource={filtered}
         columns={columns}
         pagination={{ pageSize: 20, showSizeChanger: false }}
-        locale={{ emptyText: <EmptyDocState effectiveKbId={effectiveKbId} /> }}
+        locale={{ emptyText: <EmptyDocState effectiveKbId={effectiveKbId} onDrop={handleDrop} /> }}
       />
       <Drawer
         title={`文档预览 — ${previewDoc?.fileName ?? ''}`}
@@ -386,6 +437,15 @@ export function DocumentPage() {
           </div>
         )}
       </Drawer>
+      {dragOver && (
+        <div className="drag-overlay" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+          <div className="drag-overlay-inner">
+            <CloudUploadOutlined className="drag-overlay-icon" />
+            <div className="drag-overlay-text">释放文件以上传</div>
+            <div className="drag-overlay-hint">支持 PDF / Word / Markdown / TXT，单文件不超过 30MB</div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
@@ -403,8 +463,8 @@ function MetricCard({ title, value, icon, color }: { title: string; value: numbe
   )
 }
 
-/// <summary>空状态：根据是否选中 KB 显示不同引导。</summary>
-function EmptyDocState({ effectiveKbId }: { effectiveKbId: string | null }) {
+/// <summary>空状态：未选中 KB 显示引导；已选中显示拖拽上传区。</summary>
+function EmptyDocState({ effectiveKbId, onDrop }: { effectiveKbId: string | null; onDrop: (event: React.DragEvent) => void }) {
   if (effectiveKbId === null) {
     return (
       <div className="empty-state">
@@ -415,10 +475,16 @@ function EmptyDocState({ effectiveKbId }: { effectiveKbId: string | null }) {
     )
   }
   return (
-    <div className="empty-state">
-      <div className="empty-state-icon">📄</div>
-      <div className="empty-state-title">知识库中还没有文档</div>
-      <div className="empty-state-desc">上传 PDF、Word、Markdown 或 TXT 文件</div>
+    <div
+      className="upload-dropzone upload-dropzone--empty"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={onDrop}
+    >
+      <div className="upload-dropzone-inner">
+        <CloudUploadOutlined className="upload-dropzone-icon" />
+        <div className="upload-dropzone-text">拖拽文件到此处上传</div>
+        <div className="upload-dropzone-hint">支持 PDF / Word / Markdown / TXT，单文件不超过 30MB</div>
+      </div>
     </div>
   )
 }

@@ -114,7 +114,7 @@ describe('DocumentPage', () => {
     expect(screen.getByText('design.pdf')).toBeInTheDocument()
     expect(screen.getByText('parser timeout')).toBeInTheDocument()
     expect(screen.getByText('14')).toBeInTheDocument()
-    expect(screen.getByText('拖拽文件到此处，或点击上传')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /上传文档/ })).toBeInTheDocument()
   })
 
   it('shows metric cards with correct counts', async () => {
