@@ -134,8 +134,8 @@ public sealed class KnowledgeBaseServiceTests
         var doc1 = Guid.NewGuid();
         var doc2 = Guid.NewGuid();
         dal.DocumentIds[kb.Id] = [doc1, doc2];
-        query.Documents[doc1] = new DocumentSummary(doc1, kb.Id, "a.txt", null, "p1", DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
-        query.Documents[doc2] = new DocumentSummary(doc2, kb.Id, "b.txt", null, "p2", DocumentStatus.Failed, 0, "err", Owner.Id, Now, Now);
+        query.Documents[doc1] = new DocumentSummary(doc1, kb.Id, "a.txt", null, "p1", 0, DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
+        query.Documents[doc2] = new DocumentSummary(doc2, kb.Id, "b.txt", null, "p2", 0, DocumentStatus.Failed, 0, "err", Owner.Id, Now, Now);
         var service = CreateService(dal, audit, uow, docs, queryDal: query);
 
         await service.DeleteAsync(kb.Id, Owner, isAdmin: false, CancellationToken.None);
@@ -156,7 +156,7 @@ public sealed class KnowledgeBaseServiceTests
         dal.Seed(kb);
         var docId = Guid.NewGuid();
         dal.DocumentIds[kb.Id] = [docId];
-        query.Documents[docId] = new DocumentSummary(docId, kb.Id, "test.txt", null, "path", DocumentStatus.Processing, 0, null, Owner.Id, Now, Now);
+        query.Documents[docId] = new DocumentSummary(docId, kb.Id, "test.txt", null, "path", 0, DocumentStatus.Processing, 0, null, Owner.Id, Now, Now);
         var service = CreateService(dal, audit: new RecordingAuditWriter(), uow, docs, queryDal: query);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
@@ -188,8 +188,8 @@ public sealed class KnowledgeBaseServiceTests
         var doc2 = Guid.NewGuid();
         dal.DocumentIds[kb.Id] = [doc1, doc2];
         dal.NonProcessingIds[kb.Id] = [doc1, doc2];
-        docs.Documents[doc1] = new DocumentSummary(doc1, kb.Id, "a.txt", null, "p1", DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
-        docs.Documents[doc2] = new DocumentSummary(doc2, kb.Id, "b.txt", null, "p2", DocumentStatus.Failed, 0, "err", Owner.Id, Now, Now);
+        docs.Documents[doc1] = new DocumentSummary(doc1, kb.Id, "a.txt", null, "p1", 0, DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
+        docs.Documents[doc2] = new DocumentSummary(doc2, kb.Id, "b.txt", null, "p2", 0, DocumentStatus.Failed, 0, "err", Owner.Id, Now, Now);
         var queue = new RecordingQueue();
         var service = CreateService(dal, audit, uow, docs, queue);
 
@@ -303,6 +303,7 @@ internal sealed class FakeDocumentLifecycleDal : IDocumentLifecycleDal
         return Task.CompletedTask;
     }
 
+
     public Task<bool> TryClaimAsync(Guid documentId, DateTimeOffset updatedAt, CancellationToken cancellationToken)
         => Task.FromResult(true);
 
@@ -354,11 +355,11 @@ internal sealed class FakeFileStorage : IDocumentFileStorage
     public Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken)
         => Task.FromResult<Stream>(new MemoryStream());
 
-    public Task<bool> WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken)
-        => Task.FromResult(true);
+    public Task WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken)
+        => Task.CompletedTask;
 
-    public Task<bool> DeleteAsync(string path, CancellationToken cancellationToken)
-        => Task.FromResult(true);
+    public Task DeleteAsync(string path, CancellationToken cancellationToken)
+        => Task.CompletedTask;
 }
 
 internal sealed class FakeVectorIndex : IVectorIndex

@@ -117,12 +117,34 @@ async function execute<T>(
     // connection refused / network down
     throw new ApiError(50000, '服务暂不可用，请检查网络或稍后重试')
   }
+
+  // JWT 过期时后端返回 HTTP 401（非 JSON 信封），需在此触发刷新；
+  // 若等 parseEnvelope 抛 50000 则刷新路径永远不会执行。
+  if (response.status === 401 && retryOnAuth) {
+    const refreshed = await tryRefresh()
+    if (refreshed) {
+      const retriedInit: RequestInit = { ...init }
+      const currentToken = useAuthStore.getState().accessToken
+      const mergedHeaders: Record<string, string> = { ...(init.headers as Record<string, string>) }
+      if (currentToken !== null) {
+        mergedHeaders['Authorization'] = `Bearer ${currentToken}`
+      }
+      retriedInit.headers = mergedHeaders
+      const retried = await fetch(path, retriedInit)
+      const retriedEnvelope = (await parseEnvelope(retried)) as ApiEnvelope<T>
+      if (retriedEnvelope.flag) {
+        return retriedEnvelope.data as T
+      }
+      throw new ApiError(retriedEnvelope.code, retriedEnvelope.message)
+    }
+  }
+
   const envelope = (await parseEnvelope(response)) as ApiEnvelope<T>
   if (envelope.flag) {
     return envelope.data as T
   }
 
-  // 401 静默刷新一次：先调 refresh，再原请求重发一次。
+  // 业务 401（如 refresh cookie 缺失）：静默刷新一次后重发。
   if (envelope.code === 40100 && retryOnAuth) {
     const refreshed = await tryRefresh()
     if (refreshed) {

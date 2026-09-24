@@ -109,9 +109,22 @@ public static class InfrastructureComposition
             sp.GetRequiredService<ILogger<CachedRoleEndpointGrantStore>>()));
         services.AddScoped<RoleEndpointGrantService>();
 
-        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(
-            configuration.GetConnectionString("Redis")
-                ?? throw new InvalidOperationException("ConnectionStrings:Redis is required.")));
+        // Redis 连接：显式配置避免 3.x 默认 backlog 超时过短导致间歇性 AuthenticationFailure。
+        // AbortOnConnectFail=false 让连接断开后持续重连；默认 true 会让重连时 AUTH 失败后直接放弃。
+        // ConnectRetry=5 + ConnectTimeout=10s 覆盖网络抖动时的自动重认证。
+        services.AddSingleton<IConnectionMultiplexer>(_ =>
+        {
+            var connStr = configuration.GetConnectionString("Redis")
+                ?? throw new InvalidOperationException("ConnectionStrings:Redis is required.");
+            var config = ConfigurationOptions.Parse(connStr);
+            config.AbortOnConnectFail = false;
+            config.ConnectTimeout = 10000;
+            config.SyncTimeout = 10000;
+            config.ConnectRetry = 5;
+            config.Ssl = false;
+            config.AllowAdmin = true;
+            return ConnectionMultiplexer.Connect(config);
+        });
         // 文档索引任务队列：Redis List（FIFO），键 doc:index:queue。
         services.AddSingleton<IDocumentIndexQueue, RedisDocumentIndexQueue>();
         // JWT 按用户撤权的 Redis L1：键 auth:user:{guid}:stamp，TTL = AccessTokenMinutes*60 + ClockSkewSeconds。

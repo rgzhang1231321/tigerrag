@@ -9,6 +9,7 @@ public sealed record DocumentSummary(
     string FileName,
     string? MimeType,
     string StoragePath,
+    long Size,
     DocumentStatus Status,
     int ChunkCount,
     string? FailureReason,

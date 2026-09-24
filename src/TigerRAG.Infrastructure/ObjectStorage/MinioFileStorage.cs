@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Minio;
 using Minio.DataModel.Args;
@@ -11,12 +12,17 @@ public sealed class MinioFileStorage : IDocumentFileStorage
 {
     private readonly IMinioClient _client;
     private readonly string _bucket;
+    private readonly ILogger<MinioFileStorage> _logger;
 
-    public MinioFileStorage(IMinioClient client, IOptions<ObjectStorageOptions> options)
+    public MinioFileStorage(
+        IMinioClient client,
+        IOptions<ObjectStorageOptions> options,
+        ILogger<MinioFileStorage> logger)
     {
         _client = client;
         _bucket = options.Value.Bucket
             ?? throw new InvalidOperationException($"{ObjectStorageOptions.DefaultSectionName}:Bucket is required.");
+        _logger = logger;
     }
 
     public Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken)
@@ -39,7 +45,8 @@ public sealed class MinioFileStorage : IDocumentFileStorage
         return tcs.Task;
     }
 
-    public async Task<bool> WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken)
+    /// <summary>写入对象存储；失败记录错误日志后抛出，由调用方决定是否回滚。</summary>
+    public async Task WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         try
@@ -50,15 +57,16 @@ public sealed class MinioFileStorage : IDocumentFileStorage
                 .WithStreamData(content)
                 .WithObjectSize(content.Length)
                 .WithContentType(contentType));
-            return true;
         }
-        catch (MinioException)
+        catch (Exception ex) when (ex is MinioException or IOException or OperationCanceledException)
         {
-            return false;
+            _logger.LogError(ex, "对象存储写入失败。Bucket={Bucket} Path={Path}", _bucket, path);
+            throw;
         }
     }
 
-    public async Task<bool> DeleteAsync(string path, CancellationToken cancellationToken)
+    /// <summary>删除对象存储中的文件；对象不存在视为成功；其他失败记录错误日志后抛出。</summary>
+    public async Task DeleteAsync(string path, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         try
@@ -66,15 +74,15 @@ public sealed class MinioFileStorage : IDocumentFileStorage
             await _client.RemoveObjectAsync(new RemoveObjectArgs()
                 .WithBucket(_bucket)
                 .WithObject(path));
-            return true;
         }
         catch (ObjectNotFoundException)
         {
-            return true;
+            // 对象不存在：幂等成功，无需日志。
         }
-        catch (MinioException)
+        catch (Exception ex) when (ex is MinioException or IOException or OperationCanceledException)
         {
-            return false;
+            _logger.LogError(ex, "对象存储删除失败。Bucket={Bucket} Path={Path}", _bucket, path);
+            throw;
         }
     }
 }

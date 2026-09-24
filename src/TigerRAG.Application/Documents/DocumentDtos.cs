@@ -21,6 +21,7 @@ public sealed record DocumentDto(
     string FileName,
     string Status,
     int ChunkCount,
+    long FileSize,
     string? FailureReason,
     Guid CreatedBy,
     DateTimeOffset CreatedAt,

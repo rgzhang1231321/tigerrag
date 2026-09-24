@@ -29,6 +29,9 @@ public sealed class document_record
     /// <summary>处理失败原因，仅在 Status=Failed 时填写。</summary>
     public string? FailureReason { get; set; }
 
+    /// <summary>文件大小（字节）。</summary>
+    public long Size { get; set; }
+
     /// <summary>创建者用户 Id。</summary>
     public Guid CreatedBy { get; set; }
 

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '../auth/authStore'
 import { DocumentPage } from './DocumentPage'
@@ -13,7 +14,9 @@ function renderWithClient() {
   })
   return render(
     <QueryClientProvider client={client}>
-      <DocumentPage />
+      <MemoryRouter>
+        <DocumentPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
 }
@@ -39,7 +42,7 @@ const kbs = [
   {
     id: 'kb1',
     name: '研发手册',
-    description: null,
+    description: '内部研发资料',
     ownerId: 'u1',
     ownerName: 'admin',
     documentCount: 2,
@@ -55,6 +58,7 @@ const docsPage = {
       fileName: 'spec.md',
       status: 'Indexed',
       chunkCount: 14,
+      fileSize: 102400,
       failureReason: null,
       createdBy: 'u1',
       createdAt: '2026-09-20T10:00:00Z',
@@ -66,6 +70,7 @@ const docsPage = {
       fileName: 'design.pdf',
       status: 'Failed',
       chunkCount: 0,
+      fileSize: 2048000,
       failureReason: 'parser timeout',
       createdBy: 'u1',
       createdAt: '2026-09-21T10:00:00Z',
@@ -92,7 +97,7 @@ describe('DocumentPage', () => {
     useAuthStore.getState().clear()
   })
 
-  it('renders the KB selector and lists documents of the selected KB', async () => {
+  it('renders the KB header and lists documents of the selected KB', async () => {
     vi.mocked(fetch).mockImplementation(((input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString()
       if (url === '/api/knowledge-bases/list') return Promise.resolve(jsonResponse(envelope(kbs)))
@@ -102,15 +107,31 @@ describe('DocumentPage', () => {
 
     renderWithClient()
 
-    expect(await screen.findByText('研发手册')).toBeInTheDocument()
+    expect(await screen.findByText('研发手册', { selector: '.detail-header-title' })).toBeInTheDocument()
     await waitFor(() => {
       expect(screen.getByText('spec.md')).toBeInTheDocument()
     })
     expect(screen.getByText('design.pdf')).toBeInTheDocument()
-    expect(screen.getByText('Indexed')).toBeInTheDocument()
-    expect(screen.getByText('Failed')).toBeInTheDocument()
     expect(screen.getByText('parser timeout')).toBeInTheDocument()
     expect(screen.getByText('14')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '上传文档' })).toBeInTheDocument()
+    expect(screen.getByText('拖拽文件到此处，或点击上传')).toBeInTheDocument()
+  })
+
+  it('shows metric cards with correct counts', async () => {
+    vi.mocked(fetch).mockImplementation(((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url === '/api/knowledge-bases/list') return Promise.resolve(jsonResponse(envelope(kbs)))
+      if (url === '/api/documents/list') return Promise.resolve(jsonResponse(envelope(docsPage)))
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as never)
+
+    renderWithClient()
+
+    await waitFor(() => {
+      expect(screen.getByText('总文档')).toBeInTheDocument()
+    })
+    expect(screen.getByText('已索引')).toBeInTheDocument()
+    expect(screen.getByText('处理中')).toBeInTheDocument()
+    expect(screen.getByText('失败')).toBeInTheDocument()
   })
 })

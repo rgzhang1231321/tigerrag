@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '../auth/authStore'
 import { KnowledgeBasePage } from './KnowledgeBasePage'
@@ -13,7 +14,9 @@ function renderWithClient() {
   })
   return render(
     <QueryClientProvider client={client}>
-      <KnowledgeBasePage />
+      <MemoryRouter>
+        <KnowledgeBasePage />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
 }
@@ -130,5 +133,18 @@ describe('KnowledgeBasePage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '新建知识库' }))
     expect(await screen.findByText('新建知识库', { selector: '.ant-modal-title' })).toBeInTheDocument()
+  })
+
+  it('shows empty state when no knowledge bases exist', async () => {
+    vi.mocked(fetch).mockImplementation(((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url === '/api/knowledge-bases/list') return Promise.resolve(jsonResponse(envelope([])))
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as never)
+
+    renderWithClient()
+
+    expect(await screen.findByText('还没有知识库')).toBeInTheDocument()
+    expect(screen.getByText('创建第一个知识库，开始管理文档')).toBeInTheDocument()
   })
 })

@@ -7,7 +7,7 @@ public sealed class DocumentTests
     [Fact]
     public void CompleteIndexing_WhenProcessing_MarksDocumentAsIndexed()
     {
-        var document = Document.Create(Guid.NewGuid(), "handbook.pdf", "documents/handbook.pdf");
+        var document = Document.Create(Guid.NewGuid(), "handbook.pdf", "documents/handbook.pdf", 2048);
 
         document.StartProcessing();
         document.CompleteIndexing(chunkCount: 12);
@@ -20,7 +20,7 @@ public sealed class DocumentTests
     [Fact]
     public void FailIndexing_WhenProcessing_RecordsFailureReason()
     {
-        var document = Document.Create(Guid.NewGuid(), "handbook.pdf", "documents/handbook.pdf");
+        var document = Document.Create(Guid.NewGuid(), "handbook.pdf", "documents/handbook.pdf", 2048);
 
         document.StartProcessing();
         document.FailIndexing("Embedding service unavailable");
@@ -32,7 +32,7 @@ public sealed class DocumentTests
     [Fact]
     public void CompleteIndexing_WhenPending_RejectsInvalidTransition()
     {
-        var document = Document.Create(Guid.NewGuid(), "handbook.pdf", "documents/handbook.pdf");
+        var document = Document.Create(Guid.NewGuid(), "handbook.pdf", "documents/handbook.pdf", 2048);
 
         var error = Assert.Throws<InvalidOperationException>(() => document.CompleteIndexing(1));
 

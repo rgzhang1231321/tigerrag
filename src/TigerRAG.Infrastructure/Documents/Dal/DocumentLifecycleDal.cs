@@ -82,6 +82,7 @@ public sealed class DocumentLifecycleDal(TigerRagDbContext dbContext) : IDocumen
         FileName = summary.FileName,
         MimeType = summary.MimeType,
         StoragePath = summary.StoragePath,
+        Size = summary.Size,
         Status = summary.Status,
         ChunkCount = summary.ChunkCount,
         FailureReason = summary.FailureReason,

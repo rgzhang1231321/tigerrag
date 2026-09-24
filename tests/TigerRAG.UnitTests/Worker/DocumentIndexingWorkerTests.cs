@@ -21,7 +21,7 @@ public sealed class DocumentIndexingWorkerTests
         var lifecycle = new RecordingLifecycleDal();
         var query = new RecordingQueryDal();
         var spyRepo = new RecordingSpyRepository();
-        var doc = TigerRAG.Domain.Documents.Document.Create(Guid.NewGuid(), "guide.txt", "documents/guide.txt");
+        var doc = TigerRAG.Domain.Documents.Document.Create(Guid.NewGuid(), "guide.txt", "documents/guide.txt", 1024);
         spyRepo.Seed(doc);
         var docId = doc.Id;
         var queue = new ScriptedQueue([docId]);
@@ -63,7 +63,7 @@ public sealed class DocumentIndexingWorkerTests
         var lifecycle = new RecordingLifecycleDal { ClaimSucceeds = false };
         var query = new RecordingQueryDal();
         var spyRepo = new RecordingSpyRepository();
-        var doc = TigerRAG.Domain.Documents.Document.Create(Guid.NewGuid(), "guide.txt", "documents/guide.txt");
+        var doc = TigerRAG.Domain.Documents.Document.Create(Guid.NewGuid(), "guide.txt", "documents/guide.txt", 1024);
         spyRepo.Seed(doc);
         var docId = doc.Id;
         var queue = new ScriptedQueue([docId]);
@@ -169,7 +169,7 @@ public sealed class DocumentIndexingWorkerTests
     {
         var repo = new RecordingSpyRepository();
         var id = Guid.NewGuid();
-        repo.Seed(TigerRAG.Domain.Documents.Document.Create(id, "guide.txt", "documents/guide.txt"));
+        repo.Seed(TigerRAG.Domain.Documents.Document.Create(id, "guide.txt", "documents/guide.txt", 1024));
         return new FailingDocumentIndexingService(repo);
     }
 
@@ -203,8 +203,8 @@ internal sealed class FailingFileStorage : IDocumentFileStorage
 {
     public Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken)
         => throw new InvalidOperationException("boom");
-    public Task<bool> WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken) => Task.FromResult(true);
-    public Task<bool> DeleteAsync(string path, CancellationToken cancellationToken) => Task.FromResult(true);
+    public Task WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task DeleteAsync(string path, CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 // ---- Test doubles ----
@@ -323,6 +323,7 @@ internal sealed class RecordingSpyRepository : IDocumentRepository
         // 返回一个新的 Document 实例（Reconstitute），避免业务方法直接修改字典里的引用。
         var copy = TigerRAG.Domain.Documents.Document.Reconstitute(
             stored.Id, stored.KnowledgeBaseId, stored.FileName, stored.StoragePath,
+            stored.Size,
             stored.Status, stored.ChunkCount, stored.FailureReason);
         return Task.FromResult<Document?>(copy);
     }
@@ -364,8 +365,8 @@ internal sealed class NoopLifecycleDal : IDocumentLifecycleDal
 internal sealed class NoopFileStorage : IDocumentFileStorage
 {
     public Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken) => Task.FromResult<Stream>(new MemoryStream());
-    public Task<bool> WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken) => Task.FromResult(true);
-    public Task<bool> DeleteAsync(string path, CancellationToken cancellationToken) => Task.FromResult(true);
+    public Task WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task DeleteAsync(string path, CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 internal sealed class NoopParser : IDocumentParser

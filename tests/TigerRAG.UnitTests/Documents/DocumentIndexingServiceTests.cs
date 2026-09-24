@@ -14,7 +14,7 @@ public sealed class DocumentIndexingServiceTests
     public async Task IndexAsync_ProcessesDocumentAndPersistsIndexedStatus()
     {
         var calls = new List<string>();
-        var document = Document.Create(Guid.NewGuid(), "guide.txt", "documents/guide.txt");
+        var document = Document.Create(Guid.NewGuid(), "guide.txt", "documents/guide.txt", 1024);
         document.StartProcessing();
         var repository = new RecordingRepository(document, calls);
         var audit = new RecordingAuditWriter(calls);
@@ -43,7 +43,7 @@ public sealed class DocumentIndexingServiceTests
     public async Task IndexAsync_ParserFailure_MarksFailedAndAudits()
     {
         var calls = new List<string>();
-        var document = Document.Create(Guid.NewGuid(), "broken.txt", "documents/broken.txt");
+        var document = Document.Create(Guid.NewGuid(), "broken.txt", "documents/broken.txt", 1024);
         document.StartProcessing();
         var repository = new RecordingRepository(document, calls);
         var audit = new RecordingAuditWriter(calls);
@@ -71,7 +71,7 @@ public sealed class DocumentIndexingServiceTests
     public async Task IndexAsync_VectorFailure_MarksFailedAndAudits()
     {
         var calls = new List<string>();
-        var document = Document.Create(Guid.NewGuid(), "broken.txt", "documents/broken.txt");
+        var document = Document.Create(Guid.NewGuid(), "broken.txt", "documents/broken.txt", 1024);
         document.StartProcessing();
         var repository = new RecordingRepository(document, calls);
         var audit = new RecordingAuditWriter(calls);
@@ -98,7 +98,7 @@ public sealed class DocumentIndexingServiceTests
     public async Task IndexAsync_DocumentNotProcessing_Throws()
     {
         var calls = new List<string>();
-        var document = Document.Create(Guid.NewGuid(), "guide.txt", "documents/guide.txt");
+        var document = Document.Create(Guid.NewGuid(), "guide.txt", "documents/guide.txt", 1024);
         var repository = new RecordingRepository(document, calls);
         var service = new DocumentIndexingService(
             repository,
@@ -139,11 +139,11 @@ public sealed class DocumentIndexingServiceTests
             return Task.FromResult<Stream>(new MemoryStream("content"u8.ToArray()));
         }
 
-        public Task<bool> WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken)
-            => Task.FromResult(true);
+        public Task WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken)
+            => Task.CompletedTask;
 
-        public Task<bool> DeleteAsync(string path, CancellationToken cancellationToken)
-            => Task.FromResult(true);
+        public Task DeleteAsync(string path, CancellationToken cancellationToken)
+            => Task.CompletedTask;
     }
 
     private sealed class RecordingParser(List<string> calls) : IDocumentParser

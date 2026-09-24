@@ -40,9 +40,19 @@ public static class WorkerInfrastructureComposition
         services.AddScoped<IOperationAuditDal, OperationAuditDal>();
         services.AddScoped<IOperationAuditWriter, OperationAuditDal>();
 
-        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(
-            configuration.GetConnectionString("Redis")
-                ?? throw new InvalidOperationException("ConnectionStrings:Redis is required.")));
+        services.AddSingleton<IConnectionMultiplexer>(_ =>
+        {
+            var connStr = configuration.GetConnectionString("Redis")
+                ?? throw new InvalidOperationException("ConnectionStrings:Redis is required.");
+            var config = ConfigurationOptions.Parse(connStr);
+            config.AbortOnConnectFail = false;
+            config.ConnectTimeout = 10000;
+            config.SyncTimeout = 10000;
+            config.ConnectRetry = 5;
+            config.Ssl = false;
+            config.AllowAdmin = true;
+            return ConnectionMultiplexer.Connect(config);
+        });
         services.AddSingleton<IDocumentIndexQueue, RedisDocumentIndexQueue>();
 
         services.AddSingleton(_ => new QdrantClient(new Uri(

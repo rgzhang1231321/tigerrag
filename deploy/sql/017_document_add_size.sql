@@ -1,0 +1,2 @@
+ALTER TABLE document_record
+    ADD COLUMN "Size" BIGINT NOT NULL DEFAULT 0;

@@ -5,12 +5,13 @@ namespace TigerRAG.Domain.Documents;
 /// </summary>
 public sealed class Document
 {
-    private Document(Guid knowledgeBaseId, string fileName, string storagePath)
+    private Document(Guid knowledgeBaseId, string fileName, string storagePath, long size)
     {
         Id = Guid.NewGuid();
         KnowledgeBaseId = knowledgeBaseId;
         FileName = fileName;
         StoragePath = storagePath;
+        Size = size;
         Status = DocumentStatus.Pending;
     }
 
@@ -19,6 +20,7 @@ public sealed class Document
         Guid knowledgeBaseId,
         string fileName,
         string storagePath,
+        long size,
         DocumentStatus status,
         int chunkCount,
         string? failureReason)
@@ -27,6 +29,7 @@ public sealed class Document
         KnowledgeBaseId = knowledgeBaseId;
         FileName = fileName;
         StoragePath = storagePath;
+        Size = size;
         Status = status;
         ChunkCount = chunkCount;
         FailureReason = failureReason;
@@ -36,13 +39,14 @@ public sealed class Document
     public Guid KnowledgeBaseId { get; }
     public string FileName { get; }
     public string StoragePath { get; }
+    public long Size { get; }
     public DocumentStatus Status { get; private set; }
     public int ChunkCount { get; private set; }
     public string? FailureReason { get; private set; }
 
     /// <summary>工厂方法：创建一个 Pending 状态的文档。</summary>
-    public static Document Create(Guid knowledgeBaseId, string fileName, string storagePath) =>
-        new(knowledgeBaseId, fileName, storagePath);
+    public static Document Create(Guid knowledgeBaseId, string fileName, string storagePath, long size) =>
+        new(knowledgeBaseId, fileName, storagePath, size);
 
     /// <summary>从持久化重建；跳过业务不变量校验（数据已过校验入库）。</summary>
     internal static Document Reconstitute(
@@ -50,11 +54,12 @@ public sealed class Document
         Guid knowledgeBaseId,
         string fileName,
         string storagePath,
+        long size,
         DocumentStatus status,
         int chunkCount,
         string? failureReason)
     {
-        return new Document(id, knowledgeBaseId, fileName, storagePath, status, chunkCount, failureReason);
+        return new Document(id, knowledgeBaseId, fileName, storagePath, size, status, chunkCount, failureReason);
     }
 
     /// <summary>Pending → Processing；Worker 领取任务时调用。</summary>

@@ -1,41 +1,112 @@
 import {
   Alert,
   Button,
+  Checkbox,
   Form,
   Input,
   Modal,
   Popconfirm,
+  Select,
   Space,
   Table,
   message,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
+import {
+  DeleteOutlined,
+  EditOutlined,
+  EyeOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons'
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useCreateKb, useDeleteKb, useKnowledgeBases, useReindexKb, useUpdateKb } from './useKnowledgeBases'
 import type { KnowledgeBaseDto } from './knowledgeBaseApi'
 
 type ModalMode = 'closed' | 'create' | { edit: KnowledgeBaseDto }
 
-/// <summary>知识库管理页：列表 + 创建/编辑弹窗 + 删除确认 + 重新索引按钮。</summary>
+/// <summary>格式化拥有者显示：名称 + ID 前缀。</summary>
+function renderOwner(kb: KnowledgeBaseDto) {
+  return (
+    <Space direction="vertical" size={0}>
+      <span>{kb.ownerName ?? '—'}</span>
+      <span style={{ color: '#999', fontSize: 12 }}>{kb.ownerId.slice(0, 8)}...</span>
+    </Space>
+  )
+}
+
+/// <summary>知识库管理页：列表 + 筛选 + 批量选择 + 创建/编辑弹窗 + 删除确认。</summary>
 export function KnowledgeBasePage() {
-  const { data: kbs = [], isPending } = useKnowledgeBases()
+  const navigate = useNavigate()
+  const { data: kbs = [], isPending, refetch } = useKnowledgeBases()
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'has-docs' | 'no-docs'>('all')
+  const [ownerFilter, setOwnerFilter] = useState<string>('all')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [mode, setMode] = useState<ModalMode>('closed')
   const createMutation = useCreateKb()
   const updateMutation = useUpdateKb()
   const deleteMutation = useDeleteKb()
   const reindexMutation = useReindexKb()
 
+  const owners = useMemo(() => {
+    const unique = new Map<string, string>()
+    for (const kb of kbs) {
+      if (!unique.has(kb.ownerId)) unique.set(kb.ownerId, kb.ownerName ?? kb.ownerId)
+    }
+    return Array.from(unique.entries()).map(([id, name]) => ({ id, name }))
+  }, [kbs])
+
   const filtered = useMemo(
-    () => kbs.filter((kb) => kb.name.toLowerCase().includes(search.toLowerCase())),
-    [kbs, search],
+    () => kbs.filter((kb) => {
+      const matchSearch = kb.name.toLowerCase().includes(search.toLowerCase())
+      const matchStatus = statusFilter === 'all'
+        || (statusFilter === 'has-docs' && kb.documentCount > 0)
+        || (statusFilter === 'no-docs' && kb.documentCount === 0)
+      const matchOwner = ownerFilter === 'all' || kb.ownerId === ownerFilter
+      return matchSearch && matchStatus && matchOwner
+    }),
+    [kbs, search, statusFilter, ownerFilter],
   )
 
+  function toggleSelection(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
   const columns: ColumnsType<KnowledgeBaseDto> = [
+    {
+      title: '',
+      dataIndex: 'id',
+      key: 'select',
+      width: 50,
+      render: (_value, kb) => (
+        <Checkbox
+          checked={selectedIds.has(kb.id)}
+          onChange={(event) => toggleSelection(kb.id, event.target.checked)}
+        />
+      ),
+    },
     {
       title: '名称',
       dataIndex: 'name',
       key: 'name',
+      render: (_value, kb) => (
+        <Button
+          type="link"
+          style={{ padding: 0 }}
+          onClick={() => navigate(`/documents?kbId=${kb.id}`)}
+        >
+          <Space>
+            <span style={{ color: 'var(--text-secondary)' }}>i</span>
+            <span style={{ color: 'var(--brand-secondary)' }}>{kb.name}</span>
+          </Space>
+        </Button>
+      ),
     },
     {
       title: '描述',
@@ -47,37 +118,36 @@ export function KnowledgeBasePage() {
     {
       title: '拥有者',
       key: 'owner',
-      render: (_value, kb) => (
-        <Space direction="vertical" size={0}>
-          <span>{kb.ownerName ?? '—'}</span>
-          <span style={{ color: '#999', fontSize: 12 }}>{kb.ownerId.slice(0, 8)}...</span>
-        </Space>
-      ),
+      width: 160,
+      render: (_value, kb) => renderOwner(kb),
     },
     {
       title: '文档数',
       dataIndex: 'documentCount',
       key: 'documentCount',
       width: 90,
+      align: 'center',
     },
     {
       title: '创建时间',
       dataIndex: 'createdAt',
       key: 'createdAt',
-      ellipsis: true,
+      width: 170,
       render: (value: string) => new Date(value).toLocaleString('zh-CN'),
     },
     {
       title: '操作',
       key: 'actions',
-      width: 240,
+      width: 320,
       render: (_value, kb) => (
         <Space>
-          <Button type="link" onClick={() => setMode({ edit: kb })}>
-            编辑
+          <Button type="link" style={{ padding: '0 4px' }} icon={<EyeOutlined />} onClick={() => navigate(`/documents?kbId=${kb.id}`)}>
+            查看
           </Button>
           <Button
             type="link"
+            style={{ padding: '0 4px' }}
+            icon={<ReloadOutlined />}
             loading={reindexMutation.isPending && reindexMutation.variables === kb.id}
             onClick={() =>
               reindexMutation.mutate(kb.id, {
@@ -86,6 +156,9 @@ export function KnowledgeBasePage() {
             }
           >
             重新索引
+          </Button>
+          <Button type="link" style={{ padding: '0 4px' }} icon={<EditOutlined />} onClick={() => setMode({ edit: kb })}>
+            编辑
           </Button>
           <Popconfirm
             title="删除知识库"
@@ -103,7 +176,7 @@ export function KnowledgeBasePage() {
               })
             }
           >
-            <Button type="link" danger>
+            <Button type="link" danger style={{ padding: '0 4px' }} icon={<DeleteOutlined />}>
               删除
             </Button>
           </Popconfirm>
@@ -124,17 +197,48 @@ export function KnowledgeBasePage() {
           onChange={(event) => setSearch(event.target.value)}
           className="users-search"
         />
+        <Select
+          value={statusFilter}
+          onChange={setStatusFilter}
+          style={{ minWidth: 140 }}
+          options={[
+            { value: 'all', label: '全部状态' },
+            { value: 'has-docs', label: '有文档' },
+            { value: 'no-docs', label: '无文档' },
+          ]}
+        />
+        <Select
+          value={ownerFilter}
+          onChange={setOwnerFilter}
+          style={{ minWidth: 160 }}
+          options={[
+            { value: 'all', label: '全部拥有者' },
+            ...owners.map((o) => ({ value: o.id, label: o.name })),
+          ]}
+        />
+        <Button onClick={() => void refetch()}>刷新</Button>
+        <div style={{ flex: 1 }} />
         <Button type="primary" onClick={() => setMode('create')}>
           新建知识库
         </Button>
       </div>
+      {selectedIds.size > 0 && (
+        <div className="batch-action-bar">
+          <Space>
+            <span>已选择 <strong>{selectedIds.size}</strong> 项</span>
+            <Button size="small" danger onClick={() => message.info('批量删除未实现')}>
+              批量删除
+            </Button>
+          </Space>
+        </div>
+      )}
       <Table<KnowledgeBaseDto>
         rowKey="id"
         loading={isPending}
         dataSource={filtered}
         columns={columns}
         pagination={{ pageSize: 20, showSizeChanger: false }}
-        locale={{ emptyText: '暂无知识库' }}
+        locale={{ emptyText: <EmptyKbState onCreate={() => setMode('create')} /> }}
       />
       {mode === 'create' && (
         <KbFormDialog
@@ -178,6 +282,20 @@ export function KnowledgeBasePage() {
         />
       )}
     </main>
+  )
+}
+
+/// <summary>空状态：无知识库时显示引导创建。</summary>
+function EmptyKbState({ onCreate }: { onCreate: () => void }) {
+  return (
+    <div className="empty-state">
+      <div className="empty-state-icon">📚</div>
+      <div className="empty-state-title">还没有知识库</div>
+      <div className="empty-state-desc">创建第一个知识库，开始管理文档</div>
+      <Button type="primary" onClick={onCreate}>
+        新建知识库
+      </Button>
+    </div>
   )
 }
 

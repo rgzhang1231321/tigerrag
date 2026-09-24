@@ -313,11 +313,165 @@ body {
   background: var(--card-bg);
 }
 
-.users-toolbar {
+/* ====== Detail Header ====== */
+.detail-header-card {
+  margin-bottom: 20px;
+  border-radius: 6px;
+}
+.detail-header-card .ant-card-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px;
+}
+.detail-header-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  font-size: 28px;
+  color: var(--brand-secondary);
+  background: rgba(26, 76, 51, 0.08);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.detail-header-info {
+  flex: 1;
+  min-width: 0;
+}
+.detail-header-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+.detail-header-desc {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+}
+.detail-header-meta {
+  margin-top: 12px;
+  display: flex;
+  gap: 24px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+/* ====== Batch Action Bar ====== */
+.batch-action-bar {
   display: flex;
   align-items: center;
   gap: 12px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
   margin-bottom: 16px;
+}
+
+/* ====== Empty State ====== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  text-align: center;
+}
+.empty-state-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+.empty-state-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+.empty-state-desc {
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+/* ====== Preview ====== */
+.preview-meta {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+  font-size: 13px;
+}
+.preview-meta-label {
+  color: var(--text-secondary);
+}
+.preview-content-placeholder {
+  margin-top: 16px;
+}
+
+/* ====== Metric Card Enhancements ====== */
+.metric-card-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.metric-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+  color: var(--brand-secondary);
+  background: rgba(26, 76, 51, 0.08);
+  border-radius: 4px;
+}
+.metric-card-value {
+  margin-top: 12px;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* ====== Drag & Drop Upload ====== */
+.upload-dropzone {
+  display: block;
+  margin-bottom: 16px;
+  flex: none;
+}
+.upload-dropzone .ant-upload-drag {
+  padding: 20px;
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  background: var(--card-bg);
+  transition: border-color 0.2s;
+}
+.upload-dropzone .ant-upload-drag:hover {
+  border-color: var(--brand-secondary);
+}
+.upload-dropzone .ant-upload-drag-disabled .upload-dropzone-inner {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.upload-dropzone-inner {
+  text-align: center;
+  cursor: pointer;
+}
+.upload-dropzone-icon {
+  font-size: 28px;
+  color: var(--brand-secondary);
+  margin-bottom: 8px;
+}
+.upload-dropzone-text {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.upload-dropzone-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 .users-search {

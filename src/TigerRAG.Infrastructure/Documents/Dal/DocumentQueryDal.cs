@@ -60,6 +60,7 @@ public sealed class DocumentQueryDal(TigerRagDbContext dbContext) : IDocumentQue
         record.FileName,
         record.MimeType,
         record.StoragePath,
+        record.Size,
         record.Status,
         record.ChunkCount,
         record.FailureReason,

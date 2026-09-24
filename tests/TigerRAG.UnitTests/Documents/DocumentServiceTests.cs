@@ -37,8 +37,34 @@ public sealed class DocumentServiceTests
         Assert.Equal(DocumentStatus.Pending.ToString(), result.Status);
         Assert.Equal(1, lifecycle.Documents.Count);
         Assert.Equal(1, queue.EnqueuedIds.Count);
-        Assert.Equal(1, storage.WrittenPaths.Count);
+        Assert.Single(storage.WrittenPaths);
         Assert.Equal(OperationAuditActions.DocumentCreate, audit.Entries[0].Action);
+    }
+
+    [Fact]
+    public async Task UploadAsync_FileStorageThrows_NoDbRecord()
+    {
+        var kb = KnowledgeBase.Create("KB", null, Owner.Id, Now);
+        var kbDal = new InMemoryKbDal();
+        kbDal.Seed(kb);
+        var lifecycle = new FakeLifecycleDal();
+        var query = new FakeQueryDal();
+        var queue = new RecordingQueue();
+        var storage = new ThrowingFileStorage();
+        var uow = new FakeUnitOfWork();
+        var audit = new RecordingAuditWriter();
+        var service = CreateService(kbDal, lifecycle, query, queue, storage, uow, audit);
+
+        using var stream = new MemoryStream("hello"u8.ToArray());
+        var request = new UploadDocumentRequest(kb.Id, "hello.txt", "text/plain", stream.Length, stream);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.UploadAsync(request, Owner, CancellationToken.None));
+
+        // 对象存储写入失败：DB 不应产生记录，不应入队。
+        Assert.Empty(lifecycle.Documents);
+        Assert.Empty(queue.EnqueuedIds);
+        Assert.Empty(audit.Entries);
     }
 
     [Fact]
@@ -96,14 +122,14 @@ public sealed class DocumentServiceTests
         var lifecycle = new FakeLifecycleDal();
         var query = new FakeQueryDal();
         query.Documents[docId] = new DocumentSummary(
-            docId, kbId, "a.txt", null, "p1", DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
+            docId, kbId, "a.txt", null, "p1", 0, DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
         var service = CreateService(new InMemoryKbDal(), lifecycle, query, aclAll: true);
 
         await service.DeleteAsync(docId, Owner, [], isAdmin: true, CancellationToken.None);
 
-        Assert.Equal(1, lifecycle.DeletedChunks.Count);
-        Assert.Equal(1, lifecycle.DeletedPermissions.Count);
-        Assert.Equal(1, lifecycle.DeletedDocuments.Count);
+        Assert.Single(lifecycle.DeletedChunks);
+        Assert.Single(lifecycle.DeletedPermissions);
+        Assert.Single(lifecycle.DeletedDocuments);
     }
 
     [Fact]
@@ -112,7 +138,7 @@ public sealed class DocumentServiceTests
         var docId = Guid.NewGuid();
         var query = new FakeQueryDal();
         query.Documents[docId] = new DocumentSummary(
-            docId, Guid.NewGuid(), "a.txt", null, "p1", DocumentStatus.Processing, 0, null, Owner.Id, Now, Now);
+            docId, Guid.NewGuid(), "a.txt", null, "p1", 0, DocumentStatus.Processing, 0, null, Owner.Id, Now, Now);
         var service = CreateService(new InMemoryKbDal(), new FakeLifecycleDal(), query, aclAll: true);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
@@ -123,22 +149,21 @@ public sealed class DocumentServiceTests
     public async Task ReindexAsync_ResetsAndAudits()
     {
         var docId = Guid.NewGuid();
-        var kbId = Guid.NewGuid();
         var kb = KnowledgeBase.Create("KB", null, Owner.Id, Now);
         var kbDal = new InMemoryKbDal();
         kbDal.Seed(kb);
         var lifecycle = new FakeLifecycleDal();
         var query = new FakeQueryDal();
         query.Documents[docId] = new DocumentSummary(
-            docId, kb.Id, "a.txt", null, "p1", DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
+            docId, kb.Id, "a.txt", null, "p1", 0, DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
         var queue = new RecordingQueue();
         var audit = new RecordingAuditWriter();
         var service = CreateService(kbDal, lifecycle, query, queue, audit: audit);
 
         await service.ReindexAsync(docId, Owner, [], isAdmin: false, CancellationToken.None);
 
-        Assert.Equal(1, lifecycle.ReindexedDocuments.Count);
-        Assert.Equal(1, queue.EnqueuedIds.Count);
+        Assert.Single(lifecycle.ReindexedDocuments);
+        Assert.Single(queue.EnqueuedIds);
         Assert.Equal(OperationAuditActions.DocumentReindex, audit.Entries[0].Action);
     }
 
@@ -146,10 +171,9 @@ public sealed class DocumentServiceTests
     public async Task ReindexAsync_ProcessingDocument_Rejects()
     {
         var docId = Guid.NewGuid();
-        var kbId = Guid.NewGuid();
         var query = new FakeQueryDal();
         query.Documents[docId] = new DocumentSummary(
-            docId, kbId, "a.txt", null, "p1", DocumentStatus.Processing, 0, null, Owner.Id, Now, Now);
+            docId, Guid.NewGuid(), "a.txt", null, "p1", 0, DocumentStatus.Processing, 0, null, Owner.Id, Now, Now);
         var service = CreateService(new InMemoryKbDal(), new FakeLifecycleDal(), query, aclAll: true);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
@@ -162,7 +186,7 @@ public sealed class DocumentServiceTests
         var docId = Guid.NewGuid();
         var query = new FakeQueryDal();
         query.Documents[docId] = new DocumentSummary(
-            docId, Guid.NewGuid(), "a.txt", null, "p1", DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
+            docId, Guid.NewGuid(), "a.txt", null, "p1", 0, DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
         var service = CreateService(new InMemoryKbDal(), new FakeLifecycleDal(), query, aclAll: true);
 
         var result = await service.GetAsync(docId, Stranger, [], isAdmin: true, CancellationToken.None);
@@ -176,7 +200,7 @@ public sealed class DocumentServiceTests
         var docId = Guid.NewGuid();
         var query = new FakeQueryDal();
         query.Documents[docId] = new DocumentSummary(
-            docId, Guid.NewGuid(), "a.txt", null, "p1", DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
+            docId, Guid.NewGuid(), "a.txt", null, "p1", 0, DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
         var service = CreateService(new InMemoryKbDal(), new FakeLifecycleDal(), query, aclAll: false, aclIds: []);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(
@@ -194,9 +218,9 @@ public sealed class DocumentServiceTests
         kbDal.Seed(kb);
         var query = new FakeQueryDal();
         query.Documents[docId1] = new DocumentSummary(
-            docId1, kb.Id, "a.txt", null, "p1", DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
+            docId1, kb.Id, "a.txt", null, "p1", 1024, DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
         query.Documents[docId2] = new DocumentSummary(
-            docId2, kb.Id, "b.txt", null, "p2", DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
+            docId2, kb.Id, "b.txt", null, "p2", 2048, DocumentStatus.Indexed, 3, null, Owner.Id, Now, Now);
         var service = CreateService(kbDal, new FakeLifecycleDal(), query, aclAll: false, aclIds: [docId1]);
 
         var page = await service.ListAsync(kb.Id, Owner, [], isAdmin: false, CancellationToken.None);
@@ -314,17 +338,30 @@ internal sealed class RecordingFileStorage : IDocumentFileStorage
     public Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken)
         => Task.FromResult<Stream>(new MemoryStream());
 
-    public Task<bool> WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken)
+    public Task WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken)
     {
         WrittenPaths.Add(path);
-        return Task.FromResult(true);
+        return Task.CompletedTask;
     }
 
-    public Task<bool> DeleteAsync(string path, CancellationToken cancellationToken)
+    public Task DeleteAsync(string path, CancellationToken cancellationToken)
     {
         DeletedPaths.Add(path);
-        return Task.FromResult(true);
+        return Task.CompletedTask;
     }
+}
+
+/// <summary>模拟对象存储写入失败；用于验证失败时不产生 DB 记录。</summary>
+internal sealed class ThrowingFileStorage : IDocumentFileStorage
+{
+    public Task<Stream> OpenReadAsync(string path, CancellationToken cancellationToken)
+        => throw new InvalidOperationException("模拟存储不可用。");
+
+    public Task WriteAsync(string path, Stream content, string contentType, CancellationToken cancellationToken)
+        => throw new InvalidOperationException("模拟存储写入失败。");
+
+    public Task DeleteAsync(string path, CancellationToken cancellationToken)
+        => Task.CompletedTask;
 }
 
 internal sealed class FakeVectorIndex : IVectorIndex

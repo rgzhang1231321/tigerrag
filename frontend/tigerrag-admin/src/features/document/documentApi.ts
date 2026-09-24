@@ -7,6 +7,7 @@ export interface DocumentDto {
   fileName: string
   status: 'Pending' | 'Processing' | 'Indexed' | 'Failed' | string
   chunkCount: number
+  fileSize: number
   failureReason: string | null
   createdBy: string
   createdAt: string

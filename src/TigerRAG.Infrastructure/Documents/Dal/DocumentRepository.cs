@@ -35,6 +35,7 @@ public sealed class DocumentRepository(TigerRagDbContext dbContext) : IDocumentR
         record.KnowledgeBaseId,
         record.FileName,
         record.StoragePath,
+        record.Size,
         record.Status,
         record.ChunkCount,
         record.FailureReason);
