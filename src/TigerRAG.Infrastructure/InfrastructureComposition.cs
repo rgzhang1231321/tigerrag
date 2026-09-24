@@ -12,7 +12,6 @@ using StackExchange.Redis;
 using TigerRAG.Application.ApiLogs;
 using TigerRAG.Application.Auth;
 using TigerRAG.Application.Documents;
-using TigerRAG.Application.Documents.Indexing;
 using TigerRAG.Application.Documents.Lifecycle;
 using TigerRAG.Application.KnowledgeBases;
 using TigerRAG.Application.Menus;
@@ -38,6 +37,7 @@ using TigerRAG.Infrastructure.Roles.Dal;
 using TigerRAG.Infrastructure.Statistics.Dal;
 using TigerRAG.Infrastructure.Users;
 using TigerRAG.Infrastructure.KnowledgeBases.Dal;
+using TigerRAG.Application.Documents.Indexing.Interface;
 
 namespace TigerRAG.Infrastructure;
 
@@ -96,6 +96,8 @@ public static class InfrastructureComposition
         services.AddScoped<IStatisticsService, StatisticsService>();
         services.AddScoped<IApiLogDal, ApiLogDal>();
         services.AddScoped<ApiLogService>();
+        services.AddScoped<IAccessLogDal, AccessLogDal>();
+        services.AddScoped<AccessLogService>();
         services.AddScoped<IOperationAuditDal, OperationAuditDal>();
         services.AddScoped<IOperationAuditWriter, OperationAuditDal>();
         services.AddScoped<IKbDal, KbDal>();

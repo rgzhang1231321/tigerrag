@@ -18,22 +18,42 @@ public sealed class ApiResponseFilter(ILogger<ApiResponseFilter> logger) : IAsyn
 
         if (context.Result is ObjectResult objectResult)
         {
+            // 必须在改写 StatusCode=200 之前捕获原始状态码：自动 400 的 ValidationProblemDetails 走这里，
+            // 改写后真实状态码再无处可寻。
+            var originalStatus = objectResult.StatusCode ?? StatusCodes.Status200OK;
             objectResult.Value = InjectRequestId(WrapObjectResult(objectResult, logger), requestId);
             objectResult.StatusCode = StatusCodes.Status200OK;
+            StashFailureForAccessLog(context.HttpContext, objectResult.Value, originalStatus);
         }
         else if (context.Result is StatusCodeResult statusCodeResult)
         {
+            var failureCode = ApiResponse.FromHttpStatus(statusCodeResult.StatusCode);
+            var failureMessage = MessageForStatus(statusCodeResult.StatusCode);
             context.Result = new ObjectResult(InjectRequestId(
-                ApiResponse<object?>.Failure(
-                    ApiResponse.FromHttpStatus(statusCodeResult.StatusCode),
-                    MessageForStatus(statusCodeResult.StatusCode)),
+                ApiResponse<object?>.Failure(failureCode, failureMessage),
                 requestId))
             {
                 StatusCode = StatusCodes.Status200OK
             };
+            // StatusCodeResult 分支同样暂存真实状态码给访问日志。
+            context.HttpContext.Items[AccessLogKeys.ItemKey] = new AccessLogFailure(
+                statusCodeResult.StatusCode, failureCode, failureMessage);
         }
 
         await next();
+    }
+
+    /// <summary>
+    /// 包装后信封为业务失败（code != Success）时，把真实状态与 code/message 暂存到
+    /// HttpContext.Items，供 AccessLogMiddleware 在请求结束时记录；成功请求不暂存。
+    /// </summary>
+    private static void StashFailureForAccessLog(HttpContext httpContext, object wrapped, int originalStatus)
+    {
+        if (wrapped is ApiResponseMarker { Code: not FlagStatesOption.Success } marker)
+        {
+            httpContext.Items[AccessLogKeys.ItemKey] = new AccessLogFailure(
+                originalStatus, marker.Code, marker.Message);
+        }
     }
 
     private static object InjectRequestId(object wrapped, string requestId) =>

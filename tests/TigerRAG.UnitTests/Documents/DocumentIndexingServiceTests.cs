@@ -5,6 +5,7 @@ using TigerRAG.Application.OperationAudit;
 using TigerRAG.Application.Shared;
 using TigerRAG.Domain.Documents;
 using Microsoft.Extensions.Logging;
+using TigerRAG.Application.Documents.Indexing.Interface;
 
 namespace TigerRAG.UnitTests.Documents;
 

@@ -58,11 +58,15 @@ public sealed class ApiResponseMiddleware(RequestDelegate next, ILogger<ApiRespo
         context.Response.Headers[RequestIdKeys.ResponseHeader] = requestId;
         context.Response.StatusCode = StatusCodes.Status200OK;
         context.Response.ContentType = "application/json; charset=utf-8";
-        var response = ApiResponse<object?>.Failure(
-            ApiResponse.FromHttpStatus(originalStatusCode),
-            string.IsNullOrEmpty(errorMessage)
-                ? ApiResponseFilter.DefaultMessageForStatus(originalStatusCode)
-                : errorMessage);
+        var failureCode = ApiResponse.FromHttpStatus(originalStatusCode);
+        var failureMessage = string.IsNullOrEmpty(errorMessage)
+            ? ApiResponseFilter.DefaultMessageForStatus(originalStatusCode)
+            : errorMessage;
+        // 暂存真实状态码与失败信息给 AccessLogMiddleware：改写为 200 后真实状态再无处可寻。
+        // 若 filter 已暂存业务失败、随后管道又抛异常走到这里，覆盖为 500 是正确语义。
+        context.Items[AccessLogKeys.ItemKey] = new AccessLogFailure(
+            originalStatusCode, failureCode, failureMessage);
+        var response = ApiResponse<object?>.Failure(failureCode, failureMessage);
         var withRequestId = response.WithRequestId(requestId);
         await JsonSerializer.SerializeAsync(
             originalBody,

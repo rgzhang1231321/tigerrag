@@ -1,4 +1,4 @@
-namespace TigerRAG.Application.Documents.Indexing;
+namespace TigerRAG.Application.Documents.Indexing.Interface;
 
 /// <summary>原始文件读写端口，由对象存储实现。</summary>
 public interface IDocumentFileStorage

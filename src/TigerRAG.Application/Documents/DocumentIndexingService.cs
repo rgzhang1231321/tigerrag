@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Logging;
-using TigerRAG.Application.Documents.Indexing;
+using TigerRAG.Application.Documents.Indexing.Interface;
 using TigerRAG.Application.Documents.Lifecycle;
 using TigerRAG.Application.OperationAudit;
 using TigerRAG.Application.Shared;

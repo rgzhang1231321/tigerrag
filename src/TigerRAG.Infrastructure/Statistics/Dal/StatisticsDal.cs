@@ -327,13 +327,15 @@ public sealed class StatisticsDal(
         var successRate = totalDocs > 0 ? (double)indexed / totalDocs : 0;
         var failureRate = totalDocs > 0 ? (double)failed / totalDocs : 0;
 
-        var apiLogs = await dbContext.ApiLogs
+        // API 调用趋势改数访问日志表：api_log 只有 Warning/Error/Critical 消息日志，
+        // 数出来的"调用数"严重偏低；api_access_log 才是每请求一条的真实调用记录。
+        var accessLogs = await dbContext.AccessLogs
             .AsNoTracking()
             .Where(a => a.Timestamp >= range.Start && a.Timestamp <= range.End)
             .Select(a => a.Timestamp)
             .ToListAsync(ct);
 
-        var apiCallTrend = apiLogs
+        var apiCallTrend = accessLogs
             .GroupBy(a => a.Date)
             .Select(g => new DailyCount(new DateTimeOffset(g.Key, TimeSpan.Zero), g.Count()))
             .OrderBy(x => x.Date)

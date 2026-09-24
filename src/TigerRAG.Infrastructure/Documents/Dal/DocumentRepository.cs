@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using TigerRAG.Application.Documents.Indexing;
+using TigerRAG.Application.Documents.Indexing.Interface;
 using TigerRAG.Domain.Documents;
 using TigerRAG.Infrastructure.Persistence;
 

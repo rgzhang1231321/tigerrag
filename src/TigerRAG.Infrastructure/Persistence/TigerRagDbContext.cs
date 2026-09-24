@@ -31,6 +31,7 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
     public DbSet<refresh_token_record> RefreshTokens => Set<refresh_token_record>();
     public DbSet<menu_config_record> MenuConfigs => Set<menu_config_record>();
     public DbSet<api_log_record> ApiLogs => Set<api_log_record>();
+    public DbSet<api_access_log_record> AccessLogs => Set<api_access_log_record>();
     public DbSet<operation_audit_record> OperationAudits => Set<operation_audit_record>();
     public DbSet<role_endpoint_grant_record> RoleEndpointGrants => Set<role_endpoint_grant_record>();
 
@@ -51,6 +52,7 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
         ConfigureRefreshTokens(builder);
         ConfigureMenuConfigs(builder);
         ConfigureApiLogs(builder);
+        ConfigureAccessLogs(builder);
         ConfigureOperationAudits(builder);
         ConfigureRoleEndpointGrants(builder);
         SeedRoles(builder);
@@ -180,6 +182,31 @@ public sealed class TigerRagDbContext(DbContextOptions<TigerRagDbContext> option
             entity.Property(value => value.ElapsedMs).HasColumnName("elapsed_ms");
             entity.HasIndex(value => value.RequestId);
             entity.HasIndex(value => value.Timestamp);
+        });
+    }
+
+    private static void ConfigureAccessLogs(ModelBuilder builder)
+    {
+        builder.Entity<api_access_log_record>(entity =>
+        {
+            entity.ToTable("api_access_log");
+            entity.Property(value => value.Id).HasColumnName("id");
+            entity.Property(value => value.Timestamp).HasColumnName("timestamp");
+            entity.Property(value => value.RequestId).HasColumnName("request_id").HasMaxLength(64);
+            entity.Property(value => value.UserId).HasColumnName("user_id");
+            entity.Property(value => value.UserName).HasColumnName("user_name").HasMaxLength(256);
+            entity.Property(value => value.HttpMethod).HasColumnName("http_method").HasMaxLength(8);
+            entity.Property(value => value.RequestPath).HasColumnName("request_path").HasMaxLength(500);
+            entity.Property(value => value.QueryString).HasColumnName("query_string");
+            entity.Property(value => value.Action).HasColumnName("action").HasMaxLength(500);
+            entity.Property(value => value.RequestBody).HasColumnName("request_body");
+            entity.Property(value => value.ResponseBody).HasColumnName("response_body");
+            entity.Property(value => value.StatusCode).HasColumnName("status_code");
+            entity.Property(value => value.ElapsedMs).HasColumnName("elapsed_ms");
+            entity.Property(value => value.Ip).HasColumnName("ip").HasMaxLength(64);
+            entity.HasIndex(value => value.Timestamp).IsDescending();
+            entity.HasIndex(value => value.RequestId);
+            entity.HasIndex(value => value.UserId);
         });
     }
 

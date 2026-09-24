@@ -1,4 +1,4 @@
-namespace TigerRAG.Application.Documents.Indexing;
+namespace TigerRAG.Application.Documents.Indexing.Interface;
 
 /// <summary>文档解析端口；按 MIME 派发到 Pdf/Docx/Md/Html/Txt 等具体实现。MIME 用于决定走哪个解析器。</summary>
 public interface IDocumentParser

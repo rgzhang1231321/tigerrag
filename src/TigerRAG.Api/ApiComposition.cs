@@ -36,6 +36,12 @@ public static class ApiComposition
         // 返回 false 让默认 ProblemDetails 写入继续走，最终被 ApiResponseMiddleware 包成 ApiResponse。
         services.AddExceptionHandler<LoggingExceptionHandler>();
         services.AddHostedService<ApiLogFlusherService>();
+        // 访问日志：绑定 ApiAccessLog 节 → 静态缓冲 + 后台 flusher（镜像 ApiLog 的注册方式）。
+        var accessLogConfiguration = new AccessLogConfiguration();
+        configuration.GetSection("ApiAccessLog").Bind(accessLogConfiguration);
+        AccessLogBuffer.Configure(accessLogConfiguration, configuration);
+        services.AddSingleton(accessLogConfiguration);
+        services.AddHostedService<AccessLogFlusherService>();
         services
             .AddControllers(options =>
             {
@@ -89,6 +95,9 @@ public static class ApiComposition
         app.UseForwardedHeaders();
         app.UseMiddleware<RequestIdMiddleware>();
         app.UseExceptionHandler();
+        // 访问日志在 ApiResponseMiddleware 之前注册：入向先读体并回卷给 MVC 绑定，
+        // 出向读取响应改写前暂存的真实状态码（HttpContext.Items 契约）。
+        app.UseMiddleware<AccessLogMiddleware>();
         app.UseMiddleware<ApiResponseMiddleware>();
 
         app.MapHealthChecks("/health/live");

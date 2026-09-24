@@ -1,5 +1,5 @@
 using System.Text;
-using TigerRAG.Application.Documents.Indexing;
+using TigerRAG.Application.Documents.Indexing.Interface;
 
 namespace TigerRAG.Infrastructure.Parsing;
 

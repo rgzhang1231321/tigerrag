@@ -2,6 +2,7 @@ using Microsoft.Extensions.Options;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
 using TigerRAG.Application.Documents.Indexing;
+using TigerRAG.Application.Documents.Indexing.Interface;
 using DomainDocument = TigerRAG.Domain.Documents.Document;
 
 namespace TigerRAG.Infrastructure.Indexing;

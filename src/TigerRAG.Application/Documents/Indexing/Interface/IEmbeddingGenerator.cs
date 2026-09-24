@@ -1,4 +1,4 @@
-namespace TigerRAG.Application.Documents.Indexing;
+namespace TigerRAG.Application.Documents.Indexing.Interface;
 
 /// <summary>Embedding 端口；批大小、维度、超时由具体实现控制。</summary>
 public interface IEmbeddingGenerator

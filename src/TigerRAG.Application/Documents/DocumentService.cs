@@ -1,6 +1,6 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
-using TigerRAG.Application.Documents.Indexing;
+using TigerRAG.Application.Documents.Indexing.Interface;
 using TigerRAG.Application.Documents.Lifecycle;
 using TigerRAG.Application.KnowledgeBases;
 using TigerRAG.Application.OperationAudit;

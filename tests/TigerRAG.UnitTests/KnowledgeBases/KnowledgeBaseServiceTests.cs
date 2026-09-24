@@ -9,6 +9,7 @@ using TigerRAG.Application.Users;
 using TigerRAG.Domain.Documents;
 using TigerRAG.Domain.KnowledgeBases;
 using Microsoft.Extensions.Logging;
+using TigerRAG.Application.Documents.Indexing.Interface;
 
 namespace TigerRAG.UnitTests.KnowledgeBases;
 

@@ -1,4 +1,5 @@
 using TigerRAG.Application.Documents.Indexing;
+using TigerRAG.Application.Documents.Indexing.Interface;
 using TigerRAG.Infrastructure.Indexing;
 
 namespace TigerRAG.UnitTests.Infrastructure;
