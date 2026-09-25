@@ -1,12 +1,13 @@
 using System.Text;
+using TigerRAG.Application.Documents.Indexing.Interface;
 using TigerRAG.Infrastructure.Parsing;
 
 namespace TigerRAG.UnitTests.Infrastructure;
 
-/// <summary>MimeDispatchingParser 单元测试：text/ 前缀走文本解析，其他/空 MIME 走 UTF-8 兜底。</summary>
+/// <summary>MimeDispatchingParser 单元测试：按 MIME 精确派发到具体解析器。</summary>
 public sealed class MimeDispatchingParserTests
 {
-    private readonly MimeDispatchingParser _parser = new();
+    private readonly IDocumentParser _parser = new MimeDispatchingParser();
 
     [Fact]
     public async Task ParseAsync_TextPlain_DecodesUtf8()
@@ -36,30 +37,20 @@ public sealed class MimeDispatchingParserTests
     }
 
     [Fact]
-    public async Task ParseAsync_ApplicationPdf_FallsBackToUtf8()
-    {
-        // 当前未实现 PDF 解析器：按 UTF-8 兜底读取（至少不抛异常）。
-        var text = "PDF binary content as utf8 fallback";
-        using var stream = ToStream(text);
-        var result = await _parser.ParseAsync(stream, "application/pdf", CancellationToken.None);
-        Assert.Equal(text, result);
-    }
-
-    [Fact]
-    public async Task ParseAsync_ApplicationDocx_FallsBackToUtf8()
-    {
-        var text = "DOCX binary content as utf8 fallback";
-        using var stream = ToStream(text);
-        var result = await _parser.ParseAsync(stream, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", CancellationToken.None);
-        Assert.Equal(text, result);
-    }
-
-    [Fact]
     public async Task ParseAsync_NullMimeType_FallsBackToUtf8()
     {
         var text = "content with unknown mime";
         using var stream = ToStream(text);
         var result = await _parser.ParseAsync(stream, null, CancellationToken.None);
+        Assert.Equal(text, result);
+    }
+
+    [Fact]
+    public async Task ParseAsync_UnknownMimeType_FallsBackToUtf8()
+    {
+        var text = "unknown mime type content";
+        using var stream = ToStream(text);
+        var result = await _parser.ParseAsync(stream, "application/x-unsupported", CancellationToken.None);
         Assert.Equal(text, result);
     }
 
@@ -72,16 +63,6 @@ public sealed class MimeDispatchingParserTests
     }
 
     [Fact]
-    public async Task ParseAsync_TextPlainWithCharset_StillMatchesTextPrefix()
-    {
-        // text/plain; charset=utf-8 以 text/ 开头，走文本解析。
-        var text = "charset test content";
-        using var stream = ToStream(text);
-        var result = await _parser.ParseAsync(stream, "text/plain; charset=utf-8", CancellationToken.None);
-        Assert.Equal(text, result);
-    }
-
-    [Fact]
     public async Task ParseAsync_CancellationRequested_Throws()
     {
         using var cts = new CancellationTokenSource();
@@ -91,8 +72,265 @@ public sealed class MimeDispatchingParserTests
             () => _parser.ParseAsync(stream, "text/plain", cts.Token));
     }
 
-    private static MemoryStream ToStream(string text)
+    [Fact]
+    public async Task ParseAsync_PdfMime_RoutesToPdfParser()
     {
-        return new MemoryStream(Encoding.UTF8.GetBytes(text));
+        // PdfParser 当前是 UTF-8 兜底实现，验证路由正确。
+        var text = "PDF fallback content";
+        using var stream = ToStream(text);
+        var result = await _parser.ParseAsync(stream, "application/pdf", CancellationToken.None);
+        Assert.Equal(text, result);
+    }
+
+    [Fact]
+    public async Task ParseAsync_ImagePngMime_RoutesToImageParser()
+    {
+        // 未配置 IImageDescriptor 时返回占位文本。
+        using var stream = ToStream("fake-png-bytes");
+        var result = await _parser.ParseAsync(stream, "image/png", CancellationToken.None);
+        Assert.Equal("[图片: 未配置描述服务]", result);
+    }
+
+    [Fact]
+    public async Task ParseAsync_HtmlMime_RoutesToHtmlParser()
+    {
+        using var stream = ToStream("<p>Hello</p>");
+        var result = await _parser.ParseAsync(stream, "text/html", CancellationToken.None);
+        Assert.Contains("Hello", result);
+        Assert.DoesNotContain("<p>", result);
+    }
+
+    [Fact]
+    public async Task ParseAsync_SvgMime_RoutesToSvgParser()
+    {
+        var svg = @"<svg xmlns=""http://www.w3.org/2000/svg""><text>SVG text</text></svg>";
+        using var stream = ToStream(svg);
+        var result = await _parser.ParseAsync(stream, "image/svg+xml", CancellationToken.None);
+        Assert.Contains("SVG text", result);
+    }
+
+    [Fact]
+    public async Task ParseAsync_EmlMime_RoutesToEmlParser()
+    {
+        var message = new MimeKit.MimeMessage();
+        message.From.Add(new MimeKit.MailboxAddress("Test", "test@example.com"));
+        message.To.Add(new MimeKit.MailboxAddress("Recipient", "recipient@example.com"));
+        message.Subject = "Test";
+        message.Body = new MimeKit.TextPart("plain") { Text = "EML body text" };
+
+        var ms = new MemoryStream();
+        message.WriteTo(ms);
+        ms.Position = 0;
+
+        var result = await _parser.ParseAsync(ms, "message/rfc822", CancellationToken.None);
+        Assert.Contains("EML body text", result);
+    }
+
+    [Fact]
+    public async Task ParseAsync_DocxMime_RoutesToDocxParser()
+    {
+        var docxStream = CreateMinimalDocx("Hello DOCX");
+        var result = await _parser.ParseAsync(docxStream, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", CancellationToken.None);
+        Assert.Contains("Hello DOCX", result);
+    }
+
+    [Fact]
+    public async Task ParseAsync_XlsxMime_RoutesToXlsxParser()
+    {
+        var xlsxStream = CreateMinimalXlsx();
+        var result = await _parser.ParseAsync(xlsxStream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", CancellationToken.None);
+        Assert.Contains("Sheet1", result);
+        Assert.Contains("CellA1", result);
+    }
+
+    [Fact]
+    public async Task ParseAsync_PptxMime_RoutesToPptxParser()
+    {
+        var pptxStream = CreateMinimalPptx("Slide text");
+        var result = await _parser.ParseAsync(pptxStream, "application/vnd.openxmlformats-officedocument.presentationml.presentation", CancellationToken.None);
+        Assert.Contains("Slide text", result);
+    }
+
+    [Fact]
+    public async Task ParseAsync_OdtMime_RoutesToOdtParser()
+    {
+        var odfStream = CreateMinimalOdf("Hello ODT");
+        var result = await _parser.ParseAsync(odfStream, "application/vnd.oasis.opendocument.text", CancellationToken.None);
+        Assert.Contains("Hello ODT", result);
+    }
+
+    [Fact]
+    public async Task ParseAsync_WithImageDescriptor_PassesToImageParser()
+    {
+        var descriptor = new StubImageDescriptor("LLM described image");
+        IDocumentParser parser = new MimeDispatchingParser(descriptor);
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("fake-image-bytes"));
+
+        var result = await parser.ParseAsync(stream, "image/png", CancellationToken.None);
+        Assert.Equal("LLM described image", result);
+    }
+
+    private static MemoryStream ToStream(string text) =>
+        new(Encoding.UTF8.GetBytes(text));
+
+    private static MemoryStream CreateMinimalDocx(string text)
+    {
+        var ms = new MemoryStream();
+        using (var doc = DocumentFormat.OpenXml.Packaging.WordprocessingDocument.Create(
+            ms, DocumentFormat.OpenXml.WordprocessingDocumentType.Document, true))
+        {
+            var mainPart = doc.AddMainDocumentPart();
+            mainPart.Document = new DocumentFormat.OpenXml.Wordprocessing.Document();
+            var body = new DocumentFormat.OpenXml.Wordprocessing.Body();
+            body.Append(new DocumentFormat.OpenXml.Wordprocessing.Paragraph(
+                new DocumentFormat.OpenXml.Wordprocessing.Run(
+                    new DocumentFormat.OpenXml.Wordprocessing.Text(text))));
+            mainPart.Document.Append(body);
+        }
+
+        ms.Position = 0;
+        return ms;
+    }
+
+    private static MemoryStream CreateMinimalXlsx()
+    {
+        var ms = new MemoryStream();
+        using (var doc = DocumentFormat.OpenXml.Packaging.SpreadsheetDocument.Create(
+            ms, DocumentFormat.OpenXml.SpreadsheetDocumentType.Workbook, true))
+        {
+            var wbPart = doc.AddWorkbookPart();
+            wbPart.Workbook = new DocumentFormat.OpenXml.Spreadsheet.Workbook();
+            var sheets = new DocumentFormat.OpenXml.Spreadsheet.Sheets();
+            wbPart.Workbook.Append(sheets);
+
+            var wsPart = wbPart.AddNewPart<DocumentFormat.OpenXml.Packaging.WorksheetPart>();
+            var ws = new DocumentFormat.OpenXml.Spreadsheet.Worksheet();
+            var sheetData = new DocumentFormat.OpenXml.Spreadsheet.SheetData();
+            var row = new DocumentFormat.OpenXml.Spreadsheet.Row();
+            row.Append(new DocumentFormat.OpenXml.Spreadsheet.Cell
+            {
+                CellValue = new DocumentFormat.OpenXml.Spreadsheet.CellValue("CellA1"),
+                DataType = DocumentFormat.OpenXml.Spreadsheet.CellValues.String,
+            });
+            sheetData.Append(row);
+            ws.Append(sheetData);
+            wsPart.Worksheet = ws;
+
+            var sheet = new DocumentFormat.OpenXml.Spreadsheet.Sheet
+            {
+                Name = "Sheet1",
+                SheetId = 1,
+                Id = wbPart.GetIdOfPart(wsPart),
+            };
+            sheets.Append(sheet);
+        }
+
+        ms.Position = 0;
+        return ms;
+    }
+
+    private static MemoryStream CreateMinimalPptx(string text)
+    {
+        var ms = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
+        {
+            WriteZip(archive, "[Content_Types].xml",
+                @"<?xml version=""1.0"" encoding=""UTF-8"" standalone=""yes""?>
+<Types xmlns=""http://schemas.openxmlformats.org/package/2006/content-types"">
+  <Default Extension=""rels"" ContentType=""application/vnd.openxmlformats-package.relationships+xml""/>
+  <Default Extension=""xml"" ContentType=""application/xml""/>
+  <Override PartName=""/ppt/presentation.xml"" ContentType=""application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml""/>
+  <Override PartName=""/ppt/slides/slide1.xml"" ContentType=""application/vnd.openxmlformats-officedocument.presentationml.slide+xml""/>
+</Types>");
+
+            WriteZip(archive, "_rels/.rels",
+                @"<?xml version=""1.0"" encoding=""UTF-8"" standalone=""yes""?>
+<Relationships xmlns=""http://schemas.openxmlformats.org/package/2006/relationships"">
+  <Relationship Id=""rId1"" Type=""http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"" Target=""ppt/presentation.xml""/>
+</Relationships>");
+
+            WriteZip(archive, "ppt/_rels/presentation.xml.rels",
+                @"<?xml version=""1.0"" encoding=""UTF-8"" standalone=""yes""?>
+<Relationships xmlns=""http://schemas.openxmlformats.org/package/2006/relationships"">
+  <Relationship Id=""rId1"" Type=""http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide"" Target=""slides/slide1.xml""/>
+</Relationships>");
+
+            WriteZip(archive, "ppt/presentation.xml",
+                $@"<?xml version=""1.0"" encoding=""UTF-8"" standalone=""yes""?>
+<p:presentation xmlns:p=""http://schemas.openxmlformats.org/presentationml/2006/main"" xmlns:r=""http://schemas.openxmlformats.org/officeDocument/2006/relationships"" xmlns:a=""http://schemas.openxmlformats.org/drawingml/2006/main"">
+  <p:sldIdLst>
+    <p:sldId id=""256"" r:id=""rId1""/>
+  </p:sldIdLst>
+  <p:sldSz cx=""9144000"" cy=""6858000""/>
+</p:presentation>");
+
+            WriteZip(archive, "ppt/slides/slide1.xml",
+                $@"<?xml version=""1.0"" encoding=""UTF-8"" standalone=""yes""?>
+<p:sld xmlns:p=""http://schemas.openxmlformats.org/presentationml/2006/main"" xmlns:a=""http://schemas.openxmlformats.org/drawingml/2006/main"">
+  <p:cSld><p:spTree>
+    <p:nvGrpSpPr><p:cNvPr id=""1"" name=""""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+    <p:grpSpPr/>
+    <p:sp>
+      <p:nvSpPr><p:cNvPr id=""2"" name=""TextBox""/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+      <p:spPr/>
+      <p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>{text}</a:t></a:r></a:p></p:txBody>
+    </p:sp>
+  </p:spTree></p:cSld>
+</p:sld>");
+
+            WriteZip(archive, "ppt/slides/_rels/slide1.xml.rels",
+                @"<?xml version=""1.0"" encoding=""UTF-8"" standalone=""yes""?>
+<Relationships xmlns=""http://schemas.openxmlformats.org/package/2006/relationships"">
+</Relationships>");
+        }
+
+        ms.Position = 0;
+        return ms;
+    }
+
+    private static void WriteZip(System.IO.Compression.ZipArchive archive, string path, string content)
+    {
+        var entry = archive.CreateEntry(path);
+        using var stream = entry.Open();
+        using var writer = new StreamWriter(stream, Encoding.UTF8);
+        writer.Write(content);
+    }
+
+    private static MemoryStream CreateMinimalOdf(string text)
+    {
+        var ms = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
+        {
+            var entry = archive.CreateEntry("content.xml");
+            using var entryStream = entry.Open();
+            var xml = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<office:document-content xmlns:office=""urn:oasis:names:tc:opendocument:xmlns:office:1.0""
+  xmlns:text=""urn:oasis:names:tc:opendocument:xmlns:text:1.0"">
+  <office:body><office:text><text:p>{text}</text:p></office:text></office:body>
+</office:document-content>";
+            using var writer = new StreamWriter(entryStream, Encoding.UTF8);
+            writer.Write(xml);
+        }
+
+        ms.Position = 0;
+        return ms;
+    }
+
+    private sealed class StubImageDescriptor : IImageDescriptor
+    {
+        private readonly string _description;
+
+        public StubImageDescriptor(string description)
+        {
+            _description = description;
+        }
+
+        public Task<string> DescribeAsync(
+            ReadOnlyMemory<byte> imageBytes,
+            string mimeType,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_description);
+        }
     }
 }
