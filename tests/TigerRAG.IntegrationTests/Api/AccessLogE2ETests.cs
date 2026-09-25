@@ -14,8 +14,9 @@ namespace TigerRAG.IntegrationTests.Api;
 
 /// <summary>
 /// 端到端锁定访问日志契约：真实管道（路由 → 认证 → filter → 中间件改写）下，
-/// 每条 /api 请求在 AccessLogBuffer 留下一条字段正确的条目；业务失败与异常路径
-/// 的真实状态码、失败信息来自暂存契约；异常在同 requestId 的 api_log 留有 Error 行。
+/// 每条 /api 请求在 ApiLogBuffer 留下一条 kind='access' 字段正确的条目；
+/// 业务失败与异常路径的真实状态码、失败信息来自暂存契约；
+/// 异常在同 requestId 的 api_log 缓冲里留有 kind='message' 的 Error 行 — 单表自关联契约。
 /// </summary>
 [Collection(nameof(AccessLogBufferCollection))]
 public sealed class AccessLogE2ETests
@@ -23,7 +24,7 @@ public sealed class AccessLogE2ETests
     public AccessLogE2ETests()
     {
         // 静态缓冲跨测试共享：工厂创建前清残留（工厂创建时会重新 Configure）。
-        AccessLogBuffer.ResetForTest();
+        ApiLogBuffer.ResetForTest();
     }
 
     [Fact]
@@ -38,13 +39,14 @@ public sealed class AccessLogE2ETests
         var (requestId, code) = await ReadEnvelopeAsync(response);
         Assert.Equal(0, code);
 
-        var entry = AccessLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
-        Assert.Equal("POST", entry.HttpMethod);
-        Assert.Equal("/api/auth/salt", entry.RequestPath);
+        // 单表单缓冲：按 kind='access' 过滤出访问行（同 requestId 可能还有消息行）。
+        var entry = ApiLogBuffer.DrainForTest().Single(e => e.RequestId == requestId && e.Kind == "access");
+        Assert.Equal("POST /api/auth/salt", entry.RequestPath);
+        Assert.StartsWith("POST /api/auth/salt 200 ", entry.Message);
+        Assert.EndsWith("ms", entry.Message);
         // 真实路由命中 AuthController.GetSalt。
         Assert.Equal("Auth.GetSalt", entry.Action);
         // 匿名请求（未登录）：用户字段为 null。
-        Assert.Null(entry.UserId);
         Assert.Null(entry.UserName);
         Assert.Contains("admin", entry.RequestBody);
         // 成功：真实状态 200，不记录响应体。
@@ -66,7 +68,7 @@ public sealed class AccessLogE2ETests
         var (requestId, code) = await ReadEnvelopeAsync(response);
         Assert.Equal(40400, code);
 
-        var entry = AccessLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
+        var entry = ApiLogBuffer.DrainForTest().Single(e => e.RequestId == requestId && e.Kind == "access");
         // 真实状态码确实是 200（业务失败），但响应体必须记录失败信息。
         Assert.Equal(200, entry.StatusCode);
         Assert.Equal("[40400] 用户不存在", entry.ResponseBody);
@@ -84,7 +86,7 @@ public sealed class AccessLogE2ETests
         var (requestId, code) = await ReadEnvelopeAsync(response);
         Assert.Equal(40400, code);
 
-        var entry = AccessLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
+        var entry = ApiLogBuffer.DrainForTest().Single(e => e.RequestId == requestId && e.Kind == "access");
         // 未匹配路由：真实 404（对外被改写为 200）、action 为 null。
         Assert.Equal(404, entry.StatusCode);
         Assert.Null(entry.Action);
@@ -92,7 +94,7 @@ public sealed class AccessLogE2ETests
     }
 
     [Fact]
-    public async Task SaltEndpoint_DalThrows_Enqueues500AndApiLogErrorRowWithSameRequestId()
+    public async Task SaltEndpoint_DalThrows_EnqueuesAccess500AndMessageErrorRowWithSameRequestId()
     {
         using var factory = CreateFactory(new ThrowingUserDal());
         using var client = factory.CreateClient();
@@ -102,14 +104,16 @@ public sealed class AccessLogE2ETests
         var (requestId, code) = await ReadEnvelopeAsync(response);
         Assert.Equal(50000, code);
 
-        var entry = AccessLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
-        Assert.Equal(500, entry.StatusCode);
-        Assert.Contains("[50000]", entry.ResponseBody);
-        Assert.Contains("synthetic dal failure", entry.ResponseBody);
+        // 单表自关联契约：同一次 Drain 里既有 access 行（500 + 失败信息），
+        // 也有 kind='message' 的 Error 行（同 requestId 带堆栈），两类行互不混淆。
+        var entries = ApiLogBuffer.DrainForTest().Where(e => e.RequestId == requestId).ToArray();
+        var accessRow = Assert.Single(entries, e => e.Kind == "access");
+        Assert.Equal(500, accessRow.StatusCode);
+        Assert.Contains("[50000]", accessRow.ResponseBody);
+        Assert.Contains("synthetic dal failure", accessRow.ResponseBody);
 
-        // 跨表关联契约：同 requestId 在 api_log 缓冲里留有带堆栈的 Error 行。
-        var errorRow = ApiLogBuffer.DrainForTest()
-            .Single(row => row.RequestId == requestId && row.Level == LogLevel.Error);
+        var errorRow = Assert.Single(entries, e => e.Kind == "message" && e.Level == LogLevel.Error);
+        Assert.Equal("message", errorRow.Kind);
         Assert.NotNull(errorRow.Exception);
         Assert.Contains("synthetic dal failure", errorRow.Exception);
     }

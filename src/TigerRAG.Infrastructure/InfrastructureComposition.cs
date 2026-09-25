@@ -96,8 +96,6 @@ public static class InfrastructureComposition
         services.AddScoped<IStatisticsService, StatisticsService>();
         services.AddScoped<IApiLogDal, ApiLogDal>();
         services.AddScoped<ApiLogService>();
-        services.AddScoped<IAccessLogDal, AccessLogDal>();
-        services.AddScoped<AccessLogService>();
         services.AddScoped<IOperationAuditDal, OperationAuditDal>();
         services.AddScoped<IOperationAuditWriter, OperationAuditDal>();
         services.AddScoped<IKbDal, KbDal>();

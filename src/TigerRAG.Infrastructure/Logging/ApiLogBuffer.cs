@@ -73,7 +73,10 @@ public static class ApiLogBuffer
                 return 0;
             }
 
+            // 整批在同一把锁内取出并摘除：多个 flusher（如集成测试的多工厂）并发刷写时，
+            // 同一批不会被取走两次，杜绝重复写入与摘除越界。
             batch = Pending.GetRange(0, take);
+            Pending.RemoveRange(0, take);
         }
 
         try
@@ -92,24 +95,38 @@ public static class ApiLogBuffer
                     entry.RequestPath,
                     entry.Message,
                     entry.Exception,
-                    entry.ElapsedMs
+                    entry.ElapsedMs,
+                    entry.Kind,
+                    entry.UserName,
+                    entry.Action,
+                    entry.StatusCode,
+                    entry.RequestBody,
+                    entry.ResponseBody
                 }, transaction);
             }
             transaction.Commit();
-
-            // 写入成功的 batch 才从 Pending 摘除，失败则保留待下一轮重试。
-            lock (Gate)
-            {
-                Pending.RemoveRange(0, batch.Count);
-            }
 
             return batch.Count;
         }
         catch (Exception ex)
         {
-            // 失败可观测：stderr 留痕 + 计数器自增；条目仍留缓冲里等下轮重试。
+            // 失败可观测：stderr 留痕 + 计数器自增。
             Interlocked.Increment(ref _failureCount);
             Console.Error.WriteLine($"[ApiLogBuffer] flush failed: {ex.GetType().Name}: {ex.Message}");
+            // 失败整批插回队头等下一轮重试（保持时间顺序）；超容量时从队头丢弃最旧，保证内存有界。
+            lock (Gate)
+            {
+                Pending.InsertRange(0, batch);
+                var capacity = _configuration?.Capacity ?? 0;
+                if (capacity > 0)
+                {
+                    while (Pending.Count > capacity)
+                    {
+                        Pending.RemoveAt(0);
+                    }
+                }
+            }
+
             return 0;
         }
     }
@@ -123,8 +140,8 @@ public static class ApiLogBuffer
     }
 
     private const string InsertSql = """
-        INSERT INTO api_log (timestamp, level, request_id, source_context, request_path, message, exception, elapsed_ms)
-        VALUES (@Timestamp, @Level, @RequestId, @SourceContext, @RequestPath, @Message, @Exception, @ElapsedMs)
+        INSERT INTO api_log (timestamp, level, request_id, source_context, request_path, message, exception, elapsed_ms, kind, user_name, action, status_code, request_body, response_body)
+        VALUES (@Timestamp, @Level, @RequestId, @SourceContext, @RequestPath, @Message, @Exception, @ElapsedMs, @Kind, @UserName, @Action, @StatusCode, @RequestBody, @ResponseBody)
         """;
 
     /// <summary>仅测试使用：取出当前缓冲中的所有条目而不触发 DB 写入。</summary>

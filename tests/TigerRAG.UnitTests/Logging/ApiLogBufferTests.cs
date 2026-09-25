@@ -5,7 +5,7 @@ using TigerRAG.Infrastructure.Logging;
 namespace TigerRAG.UnitTests.Logging;
 
 /// <summary>
-/// 验证 <see cref="ApiLogBuffer"/> 的容量上限、批量截断与失败可观测性。
+/// 验证 <see cref="ApiLogBuffer"/> 的容量上限、批量截断、访问行字段完整性与失败可观测性。
 /// 这些约束保证 DB 故障时内存可控 + 行为可观测，而不是静默丢失。
 /// </summary>
 [Collection(nameof(ApiLogBufferCollection))]
@@ -83,6 +83,44 @@ public sealed class ApiLogBufferTests
         // 行为契约：失败时整个 batch 留在缓冲里，下一轮重试；本测试只断言剩余 ≥ 150。
         ApiLogBuffer.TryFlush();
         Assert.True(ApiLogBuffer.DrainForTest().Count >= 150);
+    }
+
+    [Fact]
+    public void Enqueue_AccessEntry_KeepsAllAccessFieldsIntact()
+    {
+        // 访问行与消息行共用同一缓冲：kind 判别 + 访问维度字段必须原样穿过入队/取出。
+        ApiLogBuffer.Configure(
+            new ApiLogConfiguration(),
+            new ConfigurationBuilder().AddInMemoryCollection().Build());
+
+        ApiLogBuffer.Enqueue(new ApiLogEntry(
+            Timestamp: new DateTimeOffset(2026, 9, 25, 8, 0, 0, TimeSpan.Zero),
+            Level: LogLevel.Information,
+            RequestId: "req-access-1",
+            SourceContext: null,
+            RequestPath: "POST /api/logs/list?pageSize=20",
+            Message: "POST /api/logs/list?pageSize=20 200 42ms",
+            Exception: null,
+            ElapsedMs: 42,
+            Kind: "access",
+            UserName: "bob",
+            Action: "ApiLogs.List",
+            StatusCode: 200,
+            RequestBody: """{"pageSize":20,"passwordHash":"***"}""",
+            ResponseBody: null));
+
+        var actual = Assert.Single(ApiLogBuffer.DrainForTest());
+        Assert.Equal("access", actual.Kind);
+        Assert.Equal(LogLevel.Information, actual.Level);
+        Assert.Null(actual.SourceContext);
+        Assert.Equal("POST /api/logs/list?pageSize=20", actual.RequestPath);
+        Assert.Equal("POST /api/logs/list?pageSize=20 200 42ms", actual.Message);
+        Assert.Equal(42, actual.ElapsedMs);
+        Assert.Equal("bob", actual.UserName);
+        Assert.Equal("ApiLogs.List", actual.Action);
+        Assert.Equal(200, actual.StatusCode);
+        Assert.Equal("""{"pageSize":20,"passwordHash":"***"}""", actual.RequestBody);
+        Assert.Null(actual.ResponseBody);
     }
 
     private static ApiLogEntry Entry(int sequence) => new(

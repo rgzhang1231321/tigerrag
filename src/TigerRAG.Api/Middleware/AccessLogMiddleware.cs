@@ -2,26 +2,28 @@ using System.Diagnostics;
 using System.Text;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 using TigerRAG.Api.Common;
 using TigerRAG.Infrastructure.Logging;
 
 namespace TigerRAG.Api.Middleware;
 
 /// <summary>
-/// 为每个 /api 请求记录一条访问日志（方法/路径/action/用户/IP/真实状态码/耗时/脱敏请求体/失败响应体），
-/// 入队到 <see cref="AccessLogBuffer"/> 由后台批量落库。注册在 ApiResponseMiddleware 之前：
-/// 请求体先读先回卷（事后读会阻塞在无人消费的流上），响应改写为 200 前的真实状态码
-/// 经 <see cref="AccessLogKeys.ItemKey"/> 暂存契约传递。日志组件自身任何异常都不破坏请求主流程。
+/// 为每个 /api 请求记录一条访问日志（kind='access'：合并方法路径/用户/action/真实状态码/耗时/
+/// 脱敏请求体/失败响应体），入队到 <see cref="ApiLogBuffer"/> 与消息日志同表同通道批量落库。
+/// 注册在 ApiResponseMiddleware 之前：请求体先读先回卷（事后读会阻塞在无人消费的流上），
+/// 响应改写为 200 前的真实状态码经 <see cref="AccessLogKeys.ItemKey"/> 暂存契约传递。
+/// 日志组件自身任何异常都不破坏请求主流程。
 /// </summary>
 public sealed class AccessLogMiddleware(
     RequestDelegate next,
-    AccessLogConfiguration configuration,
+    ApiLogConfiguration configuration,
     ILogger<AccessLogMiddleware> logger)
 {
     /// <summary>记录请求全程：读体 → next → 落一条访问日志；防御性 catch 保持上层兜底语义。</summary>
     public async Task InvokeAsync(HttpContext context)
     {
-        if (!configuration.Enabled ||
+        if (!configuration.AccessEnabled ||
             !context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
         {
             await next(context);
@@ -178,26 +180,28 @@ public sealed class AccessLogMiddleware(
         // 用户来自 JWT claims；匿名请求（登录/刷新/401）为 null。
         context.TryGetActor(out var actor);
 
-        AccessLogBuffer.Enqueue(new AccessLogEntry(
+        // 方法+路径+查询串合并进单一 request_path 列（"POST /api/x?y=1"），与消息日志的格式一致。
+        var requestPath = Truncate(
+            $"{context.Request.Method} {context.Request.Path}{context.Request.QueryString}",
+            500);
+
+        ApiLogBuffer.Enqueue(new ApiLogEntry(
             Timestamp: DateTimeOffset.UtcNow,
+            Level: LogLevel.Information,
             RequestId: context.Items[RequestIdKeys.ItemKey]?.ToString() ?? string.Empty,
-            UserId: actor?.Id,
+            SourceContext: null,
+            RequestPath: requestPath,
+            Message: $"{requestPath} {statusCode} {elapsedMs}ms",
+            Exception: null,
+            ElapsedMs: elapsedMs,
+            Kind: "access",
             UserName: actor is null ? null : Truncate(actor.Name, 256),
-            HttpMethod: context.Request.Method,
-            RequestPath: Truncate(context.Request.Path.ToString(), 500),
-            QueryString: context.Request.QueryString.HasValue
-                ? context.Request.QueryString.ToString()
-                : null,
             Action: action,
+            StatusCode: statusCode,
             RequestBody: requestBody,
             ResponseBody: string.IsNullOrEmpty(responseBody)
                 ? null
-                : Truncate(responseBody, configuration.MaxResponseBodyChars),
-            StatusCode: statusCode,
-            ElapsedMs: elapsedMs,
-            Ip: context.Connection.RemoteIpAddress is null
-                ? null
-                : Truncate(context.Connection.RemoteIpAddress.ToString(), 64)));
+                : Truncate(responseBody, configuration.MaxResponseBodyChars)));
     }
 
     /// <summary>代码侧截断到数据库列宽，杜绝超长值毒化批次。</summary>

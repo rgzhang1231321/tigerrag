@@ -35,13 +35,9 @@ public static class ApiComposition
         // IExceptionHandler 由 UseExceptionHandler() 自动发现并按注册顺序调用；
         // 返回 false 让默认 ProblemDetails 写入继续走，最终被 ApiResponseMiddleware 包成 ApiResponse。
         services.AddExceptionHandler<LoggingExceptionHandler>();
+        // 消息日志与访问日志共用 ApiLogBuffer/ApiLogFlusherService 单写入通道：
+        // 配置由 AddTigerRagSqlLogger 绑定 ApiLog 节（含 AccessEnabled 等访问开关）。
         services.AddHostedService<ApiLogFlusherService>();
-        // 访问日志：绑定 ApiAccessLog 节 → 静态缓冲 + 后台 flusher（镜像 ApiLog 的注册方式）。
-        var accessLogConfiguration = new AccessLogConfiguration();
-        configuration.GetSection("ApiAccessLog").Bind(accessLogConfiguration);
-        AccessLogBuffer.Configure(accessLogConfiguration, configuration);
-        services.AddSingleton(accessLogConfiguration);
-        services.AddHostedService<AccessLogFlusherService>();
         services
             .AddControllers(options =>
             {

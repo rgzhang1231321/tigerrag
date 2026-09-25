@@ -29,4 +29,22 @@ public sealed class api_log_record
 
     /// <summary>请求总耗时（毫秒）。</summary>
     public int ElapsedMs { get; set; }
+
+    /// <summary>行类别：'message' 为消息日志（默认），'access' 为每请求访问日志。</summary>
+    public string Kind { get; set; } = "message";
+
+    /// <summary>访问行：操作用户名（匿名为 NULL）。</summary>
+    public string? UserName { get; set; }
+
+    /// <summary>访问行：Controller.Action（未命中 endpoint 的 404 为 NULL）。</summary>
+    public string? Action { get; set; }
+
+    /// <summary>访问行：真实状态码（响应信封改写前）。</summary>
+    public int? StatusCode { get; set; }
+
+    /// <summary>访问行：脱敏截断后的请求参数。</summary>
+    public string? RequestBody { get; set; }
+
+    /// <summary>访问行：仅失败请求记录的 "[{code}] {message}"。</summary>
+    public string? ResponseBody { get; set; }
 }

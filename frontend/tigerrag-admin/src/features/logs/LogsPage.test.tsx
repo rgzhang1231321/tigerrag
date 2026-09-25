@@ -42,6 +42,7 @@ function envelope<T>(data: T, flag = true, message = 'success') {
   }
 }
 
+/// 消息行种子（kind='message'，访问维度字段全空）。
 const seedEntries = [
   {
     id: 1,
@@ -53,6 +54,12 @@ const seedEntries = [
     message: 'Something failed',
     exception: 'System.Exception: timeout',
     elapsedMs: 150,
+    kind: 'message',
+    userName: null,
+    action: null,
+    statusCode: null,
+    requestBody: null,
+    responseBody: null,
   },
   {
     id: 2,
@@ -64,43 +71,72 @@ const seedEntries = [
     message: 'Retry attempt',
     exception: null,
     elapsedMs: 50,
+    kind: 'message',
+    userName: null,
+    action: null,
+    statusCode: null,
+    requestBody: null,
+    responseBody: null,
   },
 ]
 
+/// 访问行种子（kind='access'：合并路径含方法、用户名、action、状态码、脱敏请求体、失败响应体）。
 const seedAccessEntries = [
   {
     id: 101,
     timestamp: '2026-09-01T12:00:00Z',
+    level: 'Information',
     requestId: 'acc-1',
-    userId: 'u-9',
+    sourceContext: null,
+    requestPath: 'POST /api/knowledge-bases/list',
+    message: 'POST /api/knowledge-bases/list 200 42ms',
+    exception: null,
+    elapsedMs: 42,
+    kind: 'access',
     userName: 'bob',
-    httpMethod: 'POST',
-    requestPath: '/api/knowledge-bases/list',
-    queryString: null,
     action: 'Kb.List',
+    statusCode: 200,
     requestBody: '{"page":1,"passwordHash":"***"}',
     responseBody: '[40100] 未授权访问',
-    statusCode: 200,
-    elapsedMs: 42,
-    ip: '198.51.100.9',
   },
   {
     id: 102,
     timestamp: '2026-09-01T11:00:00Z',
+    level: 'Information',
     requestId: 'acc-2',
-    userId: null,
+    sourceContext: null,
+    requestPath: 'POST /api/no-such',
+    message: 'POST /api/no-such 404 3ms',
+    exception: null,
+    elapsedMs: 3,
+    kind: 'access',
     userName: null,
-    httpMethod: 'POST',
-    requestPath: '/api/no-such',
-    queryString: null,
     action: null,
+    statusCode: 404,
     requestBody: null,
     responseBody: '[40400] 资源不存在',
-    statusCode: 404,
-    elapsedMs: 3,
-    ip: null,
   },
 ]
+
+/// 拦截唯一日志端点 /api/logs/list，按请求体 kind 分支返回两类行；
+/// captured 记录每次请求体，供断言两 Tab 的 kind 判别。
+function mockLogsFetch(
+  captured: Record<string, unknown>[],
+  options: { messageEntries?: typeof seedEntries; accessEntries?: typeof seedAccessEntries } = {},
+) {
+  const messageEntries = options.messageEntries ?? seedEntries
+  const accessEntries = options.accessEntries ?? seedAccessEntries
+  vi.mocked(fetch).mockImplementation(((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString()
+    if (url !== '/api/logs/list') {
+      throw new Error(`Unexpected fetch: ${url}`)
+    }
+    const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {}
+    captured.push(body)
+    const entries = body.kind === 'access' ? accessEntries : messageEntries
+    return Promise.resolve(jsonResponse(envelope({ entries, total: entries.length })))
+  }) as never)
+}
 
 describe('LogsPage', () => {
   beforeEach(() => {
@@ -116,21 +152,9 @@ describe('LogsPage', () => {
     useAuthStore.getState().clear()
   })
 
-  it('lists log entries with level and request path', async () => {
-    vi.mocked(fetch).mockImplementation(((input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString()
-      if (url === '/api/logs/list') {
-        return Promise.resolve(
-          jsonResponse(
-            envelope({
-              entries: seedEntries,
-              total: 2,
-            }),
-          ),
-        )
-      }
-      throw new Error(`Unexpected fetch: ${url}`)
-    }) as never)
+  it('lists message entries and sends kind message on the error tab', async () => {
+    const captured: Record<string, unknown>[] = []
+    mockLogsFetch(captured)
 
     render(<LogsPage />, { wrapper: wrap(makeClient()) })
 
@@ -138,25 +162,13 @@ describe('LogsPage', () => {
     expect(screen.getByText('req-2')).toBeInTheDocument()
     expect(screen.getByText('GET /api/test')).toBeInTheDocument()
     expect(screen.getByText('POST /api/users')).toBeInTheDocument()
+    // 错误日志 Tab 显式声明 kind='message'，单端点单数据源。
+    expect(captured[0]).toMatchObject({ kind: 'message' })
   })
 
   it('filters by keyword', async () => {
-    let capturedBody: Record<string, unknown> | null = null
-    vi.mocked(fetch).mockImplementation(((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input.toString()
-      if (url === '/api/logs/list') {
-        capturedBody = init?.body ? JSON.parse(String(init.body)) : null
-        return Promise.resolve(
-          jsonResponse(
-            envelope({
-              entries: [seedEntries[0]],
-              total: 1,
-            }),
-          ),
-        )
-      }
-      throw new Error(`Unexpected fetch: ${url}`)
-    }) as never)
+    const captured: Record<string, unknown>[] = []
+    mockLogsFetch(captured, { messageEntries: [seedEntries[0]] })
 
     render(<LogsPage />, { wrapper: wrap(makeClient()) })
     await waitFor(() => expect(screen.getByText('req-1')).toBeInTheDocument())
@@ -167,58 +179,22 @@ describe('LogsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /查\s*询/ }))
 
     await waitFor(() => {
-      expect(capturedBody).toMatchObject({ keyword: 'timeout' })
+      expect(captured.at(-1)).toMatchObject({ keyword: 'timeout', kind: 'message' })
     })
   })
 
   it('shows empty state when no logs', async () => {
-    vi.mocked(fetch).mockImplementation(((input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString()
-      if (url === '/api/logs/list') {
-        return Promise.resolve(
-          jsonResponse(
-            envelope({
-              entries: [],
-              total: 0,
-            }),
-          ),
-        )
-      }
-      throw new Error(`Unexpected fetch: ${url}`)
-    }) as never)
+    const captured: Record<string, unknown>[] = []
+    mockLogsFetch(captured, { messageEntries: [] })
 
     render(<LogsPage />, { wrapper: wrap(makeClient()) })
 
     await waitFor(() => expect(screen.getByText('暂无日志')).toBeInTheDocument())
   })
 
-  it('renders access log rows after switching to the access tab', async () => {
-    const accessCalls: string[] = []
-    vi.mocked(fetch).mockImplementation(((input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString()
-      if (url === '/api/logs/list') {
-        return Promise.resolve(
-          jsonResponse(
-            envelope({
-              entries: seedEntries,
-              total: 2,
-            }),
-          ),
-        )
-      }
-      if (url === '/api/logs/access-list') {
-        accessCalls.push(url)
-        return Promise.resolve(
-          jsonResponse(
-            envelope({
-              entries: seedAccessEntries,
-              total: 2,
-            }),
-          ),
-        )
-      }
-      throw new Error(`Unexpected fetch: ${url}`)
-    }) as never)
+  it('renders access rows from the same endpoint with kind access', async () => {
+    const captured: Record<string, unknown>[] = []
+    mockLogsFetch(captured)
 
     render(<LogsPage />, { wrapper: wrap(makeClient()) })
     // 默认 Tab 是错误日志：先渲染错误日志行。
@@ -226,10 +202,13 @@ describe('LogsPage', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: /访问日志/ }))
 
-    // 访问日志走独立端点并渲染访问行（用户/路径/Action/状态码/RequestId）。
-    await waitFor(() => expect(accessCalls).toEqual(['/api/logs/access-list']))
+    // 访问日志走同一端点，仅靠 kind='access' 区分。
+    await waitFor(() =>
+      expect(captured.some((body) => body.kind === 'access')).toBe(true),
+    )
     await waitFor(() => expect(screen.getByText('bob')).toBeInTheDocument())
-    expect(screen.getByText('/api/knowledge-bases/list')).toBeInTheDocument()
+    // 合并路径（方法+路径）直接展示。
+    expect(screen.getByText('POST /api/knowledge-bases/list')).toBeInTheDocument()
     expect(screen.getByText('Kb.List')).toBeInTheDocument()
     expect(screen.getByText('acc-1')).toBeInTheDocument()
     // 业务失败（200 + 响应体）显示红色 Tag，404 显示橙色 Tag。
@@ -238,30 +217,8 @@ describe('LogsPage', () => {
   })
 
   it('shows request body modal from the access tab', async () => {
-    vi.mocked(fetch).mockImplementation(((input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString()
-      if (url === '/api/logs/list') {
-        return Promise.resolve(
-          jsonResponse(
-            envelope({
-              entries: [],
-              total: 0,
-            }),
-          ),
-        )
-      }
-      if (url === '/api/logs/access-list') {
-        return Promise.resolve(
-          jsonResponse(
-            envelope({
-              entries: seedAccessEntries,
-              total: 2,
-            }),
-          ),
-        )
-      }
-      throw new Error(`Unexpected fetch: ${url}`)
-    }) as never)
+    const captured: Record<string, unknown>[] = []
+    mockLogsFetch(captured, { messageEntries: [] })
 
     render(<LogsPage />, { wrapper: wrap(makeClient()) })
     fireEvent.click(screen.getByRole('tab', { name: /访问日志/ }))

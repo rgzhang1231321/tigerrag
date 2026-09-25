@@ -327,11 +327,11 @@ public sealed class StatisticsDal(
         var successRate = totalDocs > 0 ? (double)indexed / totalDocs : 0;
         var failureRate = totalDocs > 0 ? (double)failed / totalDocs : 0;
 
-        // API 调用趋势改数访问日志表：api_log 只有 Warning/Error/Critical 消息日志，
-        // 数出来的"调用数"严重偏低；api_access_log 才是每请求一条的真实调用记录。
-        var accessLogs = await dbContext.AccessLogs
+        // API 调用趋势数访问日志行（kind='access'）：每 /api 请求一条，是真实调用记录；
+        // 消息行（Warning/Error/Critical）数出来的"调用数"严重偏低，不可用。
+        var accessLogs = await dbContext.ApiLogs
             .AsNoTracking()
-            .Where(a => a.Timestamp >= range.Start && a.Timestamp <= range.End)
+            .Where(a => a.Kind == "access" && a.Timestamp >= range.Start && a.Timestamp <= range.End)
             .Select(a => a.Timestamp)
             .ToListAsync(ct);
 

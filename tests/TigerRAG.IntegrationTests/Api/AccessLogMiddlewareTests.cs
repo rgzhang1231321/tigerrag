@@ -1,8 +1,8 @@
-using System.Net;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using TigerRAG.Api.Common;
 using TigerRAG.Api.Middleware;
@@ -12,8 +12,10 @@ namespace TigerRAG.IntegrationTests.Api;
 
 /// <summary>
 /// 手工搭建 RequestId → AccessLog → ApiResponse → terminal 管道，
-/// 锁定 AccessLogMiddleware 的核心行为：字段采集完整、请求体脱敏且回卷、
-/// 真实状态码来自暂存契约、非 /api 路径与关闭开关不记录、防御性 catch 不吞异常。
+/// 锁定 AccessLogMiddleware 合并进 ApiLogBuffer 后的核心行为：
+/// kind='access' 判别、方法+路径+查询串合并进 request_path、摘要 message、
+/// 请求体脱敏且回卷、真实状态码来自暂存契约、非 /api 路径与关闭开关不记录、
+/// 防御性 catch 不吞异常。
 /// </summary>
 [Collection(nameof(AccessLogBufferCollection))]
 public sealed class AccessLogMiddlewareTests
@@ -21,12 +23,12 @@ public sealed class AccessLogMiddlewareTests
     public AccessLogMiddlewareTests()
     {
         // 静态缓冲跨测试共享：先清残留再配置，保证每个用例从干净状态开始。
-        AccessLogBuffer.ResetForTest();
-        AccessLogBuffer.Configure(new AccessLogConfiguration(), new ConfigurationBuilder().Build());
+        ApiLogBuffer.ResetForTest();
+        ApiLogBuffer.Configure(new ApiLogConfiguration(), new ConfigurationBuilder().Build());
     }
 
     [Fact]
-    public async Task JsonPost_CapturesAllFields_MasksBody_AndRewindsBodyForTerminal()
+    public async Task JsonPost_CapturesMergedPathAndKind_MasksBody_AndRewindsBodyForTerminal()
     {
         var terminalBody = string.Empty;
         var (httpContext, requestId) = await InvokePipelineAsync(
@@ -49,14 +51,21 @@ public sealed class AccessLogMiddlewareTests
                 request.ContentType = "application/json";
             });
 
-        var entry = AccessLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
-        Assert.Equal("POST", entry.HttpMethod);
-        Assert.Equal("/api/auth/login", entry.RequestPath);
-        Assert.Equal("?trace=true", entry.QueryString);
+        var entry = ApiLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
+        // 单表判别：访问行 kind='access'，level 固定 Information。
+        Assert.Equal("access", entry.Kind);
+        Assert.Equal(LogLevel.Information, entry.Level);
+        // 方法+路径+查询串合并进 request_path（"POST /api/auth/login?trace=true"）。
+        Assert.Equal("POST /api/auth/login?trace=true", entry.RequestPath);
+        // message 是摘要格式："{合并路径} {状态码} {耗时}ms"。
+        Assert.StartsWith("POST /api/auth/login?trace=true 200 ", entry.Message);
+        Assert.EndsWith("ms", entry.Message);
+        // 访问行的消息维度字段恒为空。
+        Assert.Null(entry.SourceContext);
+        Assert.Null(entry.Exception);
         // 无路由端点（DefaultHttpContext 未接路由）→ action 为 null。
         Assert.Null(entry.Action);
         // 匿名请求（无 claims）→ 用户字段为 null。
-        Assert.Null(entry.UserId);
         Assert.Null(entry.UserName);
         // 请求体脱敏：不含原文密文，其余字段保留。
         Assert.Contains("\"***\"", entry.RequestBody);
@@ -87,8 +96,9 @@ public sealed class AccessLogMiddlewareTests
                 request.ContentType = "application/json";
             });
 
-        var entry = AccessLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
+        var entry = ApiLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
         // 嵌套敏感 key 同样脱敏，非敏感兄弟字段保留。
+        Assert.Equal("access", entry.Kind);
         Assert.DoesNotContain("abc123", entry.RequestBody);
         Assert.Contains("\"***\"", entry.RequestBody);
         Assert.Contains("张三", entry.RequestBody);
@@ -103,7 +113,7 @@ public sealed class AccessLogMiddlewareTests
         httpContext.Request.Path = "/api/users/list";
         var accessLog = new AccessLogMiddleware(
             _ => throw new InvalidOperationException("synthetic middleware failure"),
-            new AccessLogConfiguration(),
+            new ApiLogConfiguration(),
             NullLogger<AccessLogMiddleware>.Instance);
         var requestIdMiddleware = new RequestIdMiddleware(accessLog.InvokeAsync);
 
@@ -113,8 +123,10 @@ public sealed class AccessLogMiddlewareTests
         Assert.Equal("synthetic middleware failure", thrown.Message);
         // RequestIdMiddleware 在调 next 之前已写入 Items，抛出后仍可读取。
         var requestId = (string)httpContext.Items[RequestIdKeys.ItemKey]!;
-        var entry = AccessLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
+        var entry = ApiLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
         // 防御路径：500 + 重抛（保持 UseExceptionHandler 兜底语义）。
+        Assert.Equal("access", entry.Kind);
+        Assert.Equal("POST /api/users/list", entry.RequestPath);
         Assert.Equal(StatusCodes.Status500InternalServerError, entry.StatusCode);
         Assert.Contains("[50000]", entry.ResponseBody);
         Assert.Contains("synthetic middleware failure", entry.ResponseBody);
@@ -131,7 +143,7 @@ public sealed class AccessLogMiddlewareTests
 
         var accessLog = new AccessLogMiddleware(
             _ => throw new OperationCanceledException(httpContext.RequestAborted),
-            new AccessLogConfiguration(),
+            new ApiLogConfiguration(),
             NullLogger<AccessLogMiddleware>.Instance);
         var requestIdMiddleware = new RequestIdMiddleware(accessLog.InvokeAsync);
 
@@ -139,7 +151,8 @@ public sealed class AccessLogMiddlewareTests
         await requestIdMiddleware.InvokeAsync(httpContext);
 
         var requestId = (string)httpContext.Items[RequestIdKeys.ItemKey]!;
-        var entry = AccessLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
+        var entry = ApiLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
+        Assert.Equal("access", entry.Kind);
         Assert.Equal(499, entry.StatusCode);
         Assert.Contains("[499]", entry.ResponseBody);
     }
@@ -156,7 +169,7 @@ public sealed class AccessLogMiddlewareTests
             });
 
         // /hubs/chat 不以 /api 开头：不记录。
-        Assert.DoesNotContain(AccessLogBuffer.DrainForTest(), e => e.RequestId == requestId);
+        Assert.DoesNotContain(ApiLogBuffer.DrainForTest(), e => e.RequestId == requestId);
     }
 
     [Fact]
@@ -174,8 +187,9 @@ public sealed class AccessLogMiddlewareTests
                 request.ContentType = "multipart/form-data; boundary=boundary";
             });
 
-        var entry = AccessLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
+        var entry = ApiLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
         // multipart 只记摘要，不读体：位置必须保持 0（未消费），供后续 Form 解析。
+        Assert.Equal("access", entry.Kind);
         Assert.Contains("multipart/form-data", entry.RequestBody);
         Assert.Contains("content-length=", entry.RequestBody);
         Assert.Equal(0, httpContext.Request.Body.Position);
@@ -191,10 +205,10 @@ public sealed class AccessLogMiddlewareTests
                 request.Method = "POST";
                 request.Path = "/api/users/list";
             },
-            configuration: new AccessLogConfiguration { Enabled = false });
+            configuration: new ApiLogConfiguration { AccessEnabled = false });
 
         // 开关关闭：直通不记录。
-        Assert.DoesNotContain(AccessLogBuffer.DrainForTest(), e => e.RequestId == requestId);
+        Assert.DoesNotContain(ApiLogBuffer.DrainForTest(), e => e.RequestId == requestId);
     }
 
     [Fact]
@@ -212,15 +226,16 @@ public sealed class AccessLogMiddlewareTests
                 request.Path = "/api/knowledge-bases/list";
             });
 
-        var entry = AccessLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
+        var entry = ApiLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
         // ApiResponseMiddleware 已把响应改写为 200，真实 401 与失败信息只能来自暂存契约。
+        Assert.Equal("access", entry.Kind);
         Assert.Equal(StatusCodes.Status401Unauthorized, entry.StatusCode);
         Assert.Contains("[40100]", entry.ResponseBody);
         // 对外响应仍是 200 信封。
     }
 
     [Fact]
-    public async Task AuthenticatedClaims_CapturedAsUserIdAndName()
+    public async Task AuthenticatedClaims_CapturedAsUserNameOnly()
     {
         var userId = Guid.NewGuid();
         var (_, requestId) = await InvokePipelineAsync(
@@ -232,6 +247,7 @@ public sealed class AccessLogMiddlewareTests
             },
             context =>
             {
+                // TryGetActor 要求 NameIdentifier + Name 双 claim 齐备才返回操作人。
                 context.User = new ClaimsPrincipal(new ClaimsIdentity(
                 [
                     new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
@@ -239,25 +255,10 @@ public sealed class AccessLogMiddlewareTests
                 ]));
             });
 
-        var entry = AccessLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
-        Assert.Equal(userId, entry.UserId);
+        var entry = ApiLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
+        // 合并决策：访问行只保留 user_name 一列，不再记录用户 id 与 IP。
+        Assert.Equal("access", entry.Kind);
         Assert.Equal("alice", entry.UserName);
-    }
-
-    [Fact]
-    public async Task RemoteIpAddress_Captured()
-    {
-        var (_, requestId) = await InvokePipelineAsync(
-            _ => Task.CompletedTask,
-            request =>
-            {
-                request.Method = "POST";
-                request.Path = "/api/users/list";
-            },
-            context => context.Connection.RemoteIpAddress = IPAddress.Parse("203.0.113.7"));
-
-        var entry = AccessLogBuffer.DrainForTest().Single(e => e.RequestId == requestId);
-        Assert.Equal("203.0.113.7", entry.Ip);
     }
 
     /// <summary>搭建 RequestId → AccessLog → ApiResponse → terminal 完整管道并执行。</summary>
@@ -265,7 +266,7 @@ public sealed class AccessLogMiddlewareTests
         RequestDelegate terminal,
         Action<HttpRequest>? configureRequest = null,
         Action<HttpContext>? configureContext = null,
-        AccessLogConfiguration? configuration = null)
+        ApiLogConfiguration? configuration = null)
     {
         var httpContext = new DefaultHttpContext();
         // DefaultHttpContext 的默认响应体是 Stream.Null（写入即丢），换成本地 MemoryStream 才能断言内容。
@@ -276,7 +277,7 @@ public sealed class AccessLogMiddlewareTests
         var apiResponse = new ApiResponseMiddleware(terminal, NullLogger<ApiResponseMiddleware>.Instance);
         var accessLog = new AccessLogMiddleware(
             apiResponse.InvokeAsync,
-            configuration ?? new AccessLogConfiguration(),
+            configuration ?? new ApiLogConfiguration(),
             NullLogger<AccessLogMiddleware>.Instance);
         var requestIdMiddleware = new RequestIdMiddleware(accessLog.InvokeAsync);
 

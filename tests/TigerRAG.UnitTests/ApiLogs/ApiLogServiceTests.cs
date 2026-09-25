@@ -2,7 +2,7 @@ using TigerRAG.Application.ApiLogs;
 
 namespace TigerRAG.UnitTests.ApiLogs;
 
-/// <summary>日志查询服务单元测试：验证查询参数传递、分页与结果映射。</summary>
+/// <summary>日志查询服务单元测试：验证查询参数（含访问筛选与 kind 判别）传递、分页与结果映射。</summary>
 public sealed class ApiLogServiceTests
 {
     [Fact]
@@ -17,6 +17,10 @@ public sealed class ApiLogServiceTests
             Level: "Error",
             RequestId: "req-123",
             Keyword: "timeout",
+            Kind: "message",
+            UserName: null,
+            PathKeyword: null,
+            StatusCode: null,
             Page: 1,
             PageSize: 20);
 
@@ -28,8 +32,40 @@ public sealed class ApiLogServiceTests
         Assert.Equal("Error", dal.LastRequest.Level);
         Assert.Equal("req-123", dal.LastRequest.RequestId);
         Assert.Equal("timeout", dal.LastRequest.Keyword);
+        Assert.Equal("message", dal.LastRequest.Kind);
         Assert.Equal(1, dal.LastRequest.Page);
         Assert.Equal(20, dal.LastRequest.PageSize);
+    }
+
+    [Fact]
+    public async Task ListAsync_WithAccessFilters_PassesAccessParametersToDal()
+    {
+        // 访问日志 Tab 走同一服务/端点：kind='access' + 用户名/路径/状态码筛选必须原样透传。
+        var dal = new RecordingApiLogDal();
+        var service = new ApiLogService(dal);
+
+        var request = new ApiLogQueryRequest(
+            From: null,
+            To: null,
+            Level: null,
+            RequestId: "req-a",
+            Keyword: null,
+            Kind: "access",
+            UserName: "bob",
+            PathKeyword: "logs",
+            StatusCode: 404,
+            Page: 2,
+            PageSize: 10);
+
+        await service.ListAsync(request, CancellationToken.None);
+
+        Assert.NotNull(dal.LastRequest);
+        Assert.Equal("access", dal.LastRequest!.Kind);
+        Assert.Equal("bob", dal.LastRequest.UserName);
+        Assert.Equal("logs", dal.LastRequest.PathKeyword);
+        Assert.Equal(404, dal.LastRequest.StatusCode);
+        Assert.Equal(2, dal.LastRequest.Page);
+        Assert.Equal(10, dal.LastRequest.PageSize);
     }
 
     [Fact]
@@ -46,7 +82,13 @@ public sealed class ApiLogServiceTests
                 RequestPath: "GET /api/test",
                 Message: "Something failed",
                 Exception: "System.Exception: timeout",
-                ElapsedMs: 150),
+                ElapsedMs: 150,
+                Kind: "message",
+                UserName: null,
+                Action: null,
+                StatusCode: null,
+                RequestBody: null,
+                ResponseBody: null),
         };
         var dal = new RecordingApiLogDal
         {
@@ -55,7 +97,9 @@ public sealed class ApiLogServiceTests
         };
         var service = new ApiLogService(dal);
 
-        var result = await service.ListAsync(new ApiLogQueryRequest(null, null, null, null, null, 1, 20), CancellationToken.None);
+        var result = await service.ListAsync(
+            new ApiLogQueryRequest(null, null, null, null, null, null, null, null, null, 1, 20),
+            CancellationToken.None);
 
         Assert.Equal(1, result.Total);
         Assert.Single(result.Entries);
@@ -65,6 +109,7 @@ public sealed class ApiLogServiceTests
         Assert.Equal("Something failed", result.Entries[0].Message);
         Assert.Equal("System.Exception: timeout", result.Entries[0].Exception);
         Assert.Equal(150, result.Entries[0].ElapsedMs);
+        Assert.Equal("message", result.Entries[0].Kind);
     }
 
     [Fact]
@@ -77,7 +122,9 @@ public sealed class ApiLogServiceTests
         };
         var service = new ApiLogService(dal);
 
-        var result = await service.ListAsync(new ApiLogQueryRequest(null, null, null, null, null, 1, 20), CancellationToken.None);
+        var result = await service.ListAsync(
+            new ApiLogQueryRequest(null, null, null, null, null, null, null, null, null, 1, 20),
+            CancellationToken.None);
 
         Assert.Equal(0, result.Total);
         Assert.Empty(result.Entries);

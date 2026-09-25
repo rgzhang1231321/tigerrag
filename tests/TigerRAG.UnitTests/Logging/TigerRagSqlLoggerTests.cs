@@ -40,6 +40,13 @@ public sealed class TigerRagSqlLoggerTests
         Assert.Equal("TigerRAG.UnitTests", entry.SourceContext);
         Assert.Contains("boom: Who", entry.Message);
         Assert.Contains("inner", entry.Exception);
+        // 消息行判别契约：kind 恒为 message，访问维度字段恒为空，保证两类行在单表里互不混淆。
+        Assert.Equal("message", entry.Kind);
+        Assert.Null(entry.UserName);
+        Assert.Null(entry.Action);
+        Assert.Null(entry.StatusCode);
+        Assert.Null(entry.RequestBody);
+        Assert.Null(entry.ResponseBody);
     }
 
     [Fact]
