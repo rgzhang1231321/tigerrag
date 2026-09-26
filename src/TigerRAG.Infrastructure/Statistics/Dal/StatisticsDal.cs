@@ -1,6 +1,6 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using StackExchange.Redis;
 using TigerRAG.Application.Shared;
 using TigerRAG.Application.Statistics;
 using TigerRAG.Application.Statistics.Dashboard;
@@ -14,7 +14,7 @@ namespace TigerRAG.Infrastructure.Statistics.Dal;
 /// <summary>统计 DAL：聚合 Dashboard 所需的全部指标。顺序 await，DbContext 非线程安全。</summary>
 public sealed class StatisticsDal(
     TigerRagDbContext dbContext,
-    IConnectionMultiplexer redis) : IStatisticsDal
+    IReportCache reportCache) : IStatisticsDal
 {
     private static DateTimeOffset UtcNow => new DateTimeOffset(DateTime.UtcNow, TimeSpan.Zero);
     /// <summary>聚合 Dashboard 所需的核心指标和趋势数据。</summary>
@@ -31,7 +31,7 @@ public sealed class StatisticsDal(
         var msgCount = await dbContext.Messages.CountAsync(cancellationToken);
         var totalTokens = await dbContext.Messages.SumAsync(m => (long?)m.TokenCount ?? 0, cancellationToken);
 
-        var startDate = new DateTimeOffset(DateTime.UtcNow.AddDays(-6).Date, TimeSpan.Zero);
+        var startDate = new DateTimeOffset(DateTime.UtcNow.AddDays(-6), TimeSpan.Zero);
         var recentWeekDocuments = await dbContext.Documents
             .AsNoTracking()
             .Where(d => d.CreatedAt >= startDate)
@@ -91,18 +91,10 @@ public sealed class StatisticsDal(
     public async Task<ReportDataWrapper> GetReportAsync(ReportRequest request, CancellationToken cancellationToken)
     {
         var cacheKey = $"statistics:report:{request.ReportType}:{request.DateRange.Start:yyyyMMdd}:{request.DateRange.End:yyyyMMdd}";
-        try
+        var cached = await reportCache.GetAsync<ReportDataWrapper>(cacheKey, cancellationToken);
+        if (cached is not null)
         {
-            var db = redis.GetDatabase();
-            var cached = await db.StringGetAsync(cacheKey);
-            if (cached.HasValue)
-            {
-                return System.Text.Json.JsonSerializer.Deserialize<ReportDataWrapper>(cached.ToString())!;
-            }
-        }
-        catch (RedisException)
-        {
-            // Redis 不可用时跳过缓存，直接计算。
+            return cached;
         }
 
         ReportDataWrapper result = request.ReportType switch
@@ -114,17 +106,7 @@ public sealed class StatisticsDal(
             _ => throw new ArgumentOutOfRangeException(nameof(request.ReportType))
         };
 
-        try
-        {
-            var db = redis.GetDatabase();
-            var json = System.Text.Json.JsonSerializer.Serialize(result);
-            await db.StringSetAsync(cacheKey, json, TimeSpan.FromMinutes(5));
-        }
-        catch (RedisException)
-        {
-            // Redis 不可用时忽略缓存写入。
-        }
-
+        await reportCache.SetAsync(cacheKey, result, TimeSpan.FromMinutes(5), cancellationToken);
         return result;
     }
 

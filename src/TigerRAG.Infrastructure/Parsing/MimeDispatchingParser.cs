@@ -1,6 +1,7 @@
 using System.Text;
 using TigerRAG.Application.Documents.Indexing;
 using TigerRAG.Application.Documents.Indexing.Interface;
+using TigerRAG.Infrastructure.Parsing;
 
 namespace TigerRAG.Infrastructure.Parsing;
 
@@ -9,7 +10,7 @@ public sealed class MimeDispatchingParser : IDocumentParser
 {
     private readonly Dictionary<string, ISpecificParser> _mimeMap = new(StringComparer.OrdinalIgnoreCase);
 
-    public MimeDispatchingParser(IImageDescriptor? imageDescriptor = null)
+    public MimeDispatchingParser()
     {
         var parsers = new ISpecificParser[]
         {
@@ -24,7 +25,7 @@ public sealed class MimeDispatchingParser : IDocumentParser
             new OdsParser(),
             new OdpParser(),
             new EmlParser(),
-            new ImageParser(imageDescriptor),
+            new ImageParser(),
         };
 
         foreach (var parser in parsers)
@@ -36,7 +37,7 @@ public sealed class MimeDispatchingParser : IDocumentParser
         }
     }
 
-    async Task<string> IDocumentParser.ParseAsync(Stream content, string? mimeType, CancellationToken cancellationToken)
+    async Task<DocumentParseResult> IDocumentParser.ParseAsync(Stream content, string? mimeType, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -47,6 +48,7 @@ public sealed class MimeDispatchingParser : IDocumentParser
 
         // 未匹配或 MIME 未知：UTF-8 兜底。
         using var reader = new StreamReader(content, Encoding.UTF8, leaveOpen: true);
-        return await reader.ReadToEndAsync(cancellationToken);
+        var text = await reader.ReadToEndAsync(cancellationToken);
+        return new DocumentParseResult(text, Array.Empty<ExtractedImage>());
     }
 }

@@ -1,4 +1,5 @@
 using System.Text;
+using TigerRAG.Application.Documents.Indexing;
 using TigerRAG.Application.Documents.Indexing.Interface;
 using TigerRAG.Infrastructure.Parsing;
 
@@ -15,7 +16,7 @@ public sealed class MimeDispatchingParserTests
         var text = "Hello, 世界！";
         using var stream = ToStream(text);
         var result = await _parser.ParseAsync(stream, "text/plain", CancellationToken.None);
-        Assert.Equal(text, result);
+        Assert.Equal(text, result.Content);
     }
 
     [Fact]
@@ -24,7 +25,7 @@ public sealed class MimeDispatchingParserTests
         var text = "# Title\n\nSome **markdown** content.";
         using var stream = ToStream(text);
         var result = await _parser.ParseAsync(stream, "text/markdown", CancellationToken.None);
-        Assert.Equal(text, result);
+        Assert.Equal(text, result.Content);
     }
 
     [Fact]
@@ -33,7 +34,7 @@ public sealed class MimeDispatchingParserTests
         var text = "a,b,c\n1,2,3";
         using var stream = ToStream(text);
         var result = await _parser.ParseAsync(stream, "text/csv", CancellationToken.None);
-        Assert.Equal(text, result);
+        Assert.Equal(text, result.Content);
     }
 
     [Fact]
@@ -42,7 +43,7 @@ public sealed class MimeDispatchingParserTests
         var text = "content with unknown mime";
         using var stream = ToStream(text);
         var result = await _parser.ParseAsync(stream, null, CancellationToken.None);
-        Assert.Equal(text, result);
+        Assert.Equal(text, result.Content);
     }
 
     [Fact]
@@ -51,7 +52,7 @@ public sealed class MimeDispatchingParserTests
         var text = "unknown mime type content";
         using var stream = ToStream(text);
         var result = await _parser.ParseAsync(stream, "application/x-unsupported", CancellationToken.None);
-        Assert.Equal(text, result);
+        Assert.Equal(text, result.Content);
     }
 
     [Fact]
@@ -59,7 +60,7 @@ public sealed class MimeDispatchingParserTests
     {
         using var stream = new MemoryStream();
         var result = await _parser.ParseAsync(stream, "text/plain", CancellationToken.None);
-        Assert.Equal(string.Empty, result);
+        Assert.Equal(string.Empty, result.Content);
     }
 
     [Fact]
@@ -75,20 +76,19 @@ public sealed class MimeDispatchingParserTests
     [Fact]
     public async Task ParseAsync_PdfMime_RoutesToPdfParser()
     {
-        // PdfParser 当前是 UTF-8 兜底实现，验证路由正确。
-        var text = "PDF fallback content";
-        using var stream = ToStream(text);
+        var pdf = CreateMinimalPdf("Real PDF content");
+        using var stream = new MemoryStream(pdf);
         var result = await _parser.ParseAsync(stream, "application/pdf", CancellationToken.None);
-        Assert.Equal(text, result);
+        Assert.Equal("Real PDF content", result.Content);
     }
 
     [Fact]
     public async Task ParseAsync_ImagePngMime_RoutesToImageParser()
     {
-        // 未配置 IImageDescriptor 时返回占位文本。
         using var stream = ToStream("fake-png-bytes");
         var result = await _parser.ParseAsync(stream, "image/png", CancellationToken.None);
-        Assert.Equal("[图片: 未配置描述服务]", result);
+        // ImageParser 当前返回空内容。
+        Assert.Equal(string.Empty, result.Content);
     }
 
     [Fact]
@@ -96,8 +96,8 @@ public sealed class MimeDispatchingParserTests
     {
         using var stream = ToStream("<p>Hello</p>");
         var result = await _parser.ParseAsync(stream, "text/html", CancellationToken.None);
-        Assert.Contains("Hello", result);
-        Assert.DoesNotContain("<p>", result);
+        Assert.Contains("Hello", result.Content);
+        Assert.DoesNotContain("<p>", result.Content);
     }
 
     [Fact]
@@ -106,7 +106,7 @@ public sealed class MimeDispatchingParserTests
         var svg = @"<svg xmlns=""http://www.w3.org/2000/svg""><text>SVG text</text></svg>";
         using var stream = ToStream(svg);
         var result = await _parser.ParseAsync(stream, "image/svg+xml", CancellationToken.None);
-        Assert.Contains("SVG text", result);
+        Assert.Contains("SVG text", result.Content);
     }
 
     [Fact]
@@ -123,7 +123,7 @@ public sealed class MimeDispatchingParserTests
         ms.Position = 0;
 
         var result = await _parser.ParseAsync(ms, "message/rfc822", CancellationToken.None);
-        Assert.Contains("EML body text", result);
+        Assert.Contains("EML body text", result.Content);
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public sealed class MimeDispatchingParserTests
     {
         var docxStream = CreateMinimalDocx("Hello DOCX");
         var result = await _parser.ParseAsync(docxStream, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", CancellationToken.None);
-        Assert.Contains("Hello DOCX", result);
+        Assert.Contains("Hello DOCX", result.Content);
     }
 
     [Fact]
@@ -139,8 +139,8 @@ public sealed class MimeDispatchingParserTests
     {
         var xlsxStream = CreateMinimalXlsx();
         var result = await _parser.ParseAsync(xlsxStream, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", CancellationToken.None);
-        Assert.Contains("Sheet1", result);
-        Assert.Contains("CellA1", result);
+        Assert.Contains("Sheet1", result.Content);
+        Assert.Contains("CellA1", result.Content);
     }
 
     [Fact]
@@ -148,7 +148,7 @@ public sealed class MimeDispatchingParserTests
     {
         var pptxStream = CreateMinimalPptx("Slide text");
         var result = await _parser.ParseAsync(pptxStream, "application/vnd.openxmlformats-officedocument.presentationml.presentation", CancellationToken.None);
-        Assert.Contains("Slide text", result);
+        Assert.Contains("Slide text", result.Content);
     }
 
     [Fact]
@@ -156,22 +156,31 @@ public sealed class MimeDispatchingParserTests
     {
         var odfStream = CreateMinimalOdf("Hello ODT");
         var result = await _parser.ParseAsync(odfStream, "application/vnd.oasis.opendocument.text", CancellationToken.None);
-        Assert.Contains("Hello ODT", result);
+        Assert.Contains("Hello ODT", result.Content);
     }
 
     [Fact]
-    public async Task ParseAsync_WithImageDescriptor_PassesToImageParser()
+    public async Task ParseAsync_AllResults_HaveEmptyImagesList()
     {
-        var descriptor = new StubImageDescriptor("LLM described image");
-        IDocumentParser parser = new MimeDispatchingParser(descriptor);
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("fake-image-bytes"));
-
-        var result = await parser.ParseAsync(stream, "image/png", CancellationToken.None);
-        Assert.Equal("LLM described image", result);
+        // 当前阶段所有解析器的 Images 列表应为空。
+        using var stream = ToStream("test content");
+        var result = await _parser.ParseAsync(stream, "text/plain", CancellationToken.None);
+        Assert.Empty(result.Images);
     }
 
     private static MemoryStream ToStream(string text) =>
         new(Encoding.UTF8.GetBytes(text));
+
+    /// <summary>用 PdfPig Writer 构建单页文本 PDF。</summary>
+    private static byte[] CreateMinimalPdf(string text)
+    {
+        using var ms = new MemoryStream();
+        using var builder = new UglyToad.PdfPig.Writer.PdfDocumentBuilder(ms);
+        var font = builder.AddStandard14Font(UglyToad.PdfPig.Fonts.Standard14Fonts.Standard14Font.Helvetica);
+        var page = builder.AddPage(UglyToad.PdfPig.Content.PageSize.A4, true);
+        page.AddText(text, 12, new UglyToad.PdfPig.Core.PdfPoint(50, 700), font);
+        return builder.Build();
+    }
 
     private static MemoryStream CreateMinimalDocx(string text)
     {
@@ -314,23 +323,5 @@ public sealed class MimeDispatchingParserTests
 
         ms.Position = 0;
         return ms;
-    }
-
-    private sealed class StubImageDescriptor : IImageDescriptor
-    {
-        private readonly string _description;
-
-        public StubImageDescriptor(string description)
-        {
-            _description = description;
-        }
-
-        public Task<string> DescribeAsync(
-            ReadOnlyMemory<byte> imageBytes,
-            string mimeType,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromResult(_description);
-        }
     }
 }
