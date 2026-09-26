@@ -221,7 +221,7 @@ public sealed class CachedRoleEndpointGrantStoreTests
         var inner = new StubInnerStore();
         var cache = new StubCache
         {
-            InvalidateThrows = new RedisConnectionException(ConnectionFailureType.UnableToConnect, "down"),
+            InvalidateThrows = new RedisConnectionException(ConnectionFailureType.UnableToConnect, CommandFlags.None, "down", null, CommandStatus.Unknown),
         };
         var sut = new CachedRoleEndpointGrantStore(inner, cache, NullLogger<CachedRoleEndpointGrantStore>.Instance);
 

@@ -194,7 +194,6 @@ public sealed class XlsxParserTests
     public void MimeTypes_ContainsXlsx()
     {
         Assert.Contains("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", _parser.MimeTypes);
-        Assert.Contains("application/vnd.ms-excel", _parser.MimeTypes);
     }
 
     private static MemoryStream CreateXlsx(string sheetName, string[][] rows)
@@ -260,6 +259,111 @@ public sealed class XlsxParserTests
         {
             var wbPart = doc.AddWorkbookPart();
             wbPart.Workbook = new Workbook(new Sheets());
+        }
+
+        ms.Position = 0;
+        return ms;
+    }
+}
+
+/// <summary>XlsParser 单元测试：工作表单元格文本提取。</summary>
+public sealed class XlsParserTests
+{
+    private readonly XlsParser _parser = new();
+
+    [Fact]
+    public async Task ParseAsync_SingleSheet_ReturnsSheetNameAndCells()
+    {
+        using var stream = CreateXls("Sheet1", new[] { new[] { "A1", "B1" }, new[] { "A2", "B2" } });
+        var result = await _parser.ParseAsync(stream, CancellationToken.None);
+        Assert.Contains("Sheet1", result.Content);
+        Assert.Contains("A1", result.Content);
+        Assert.Contains("B1", result.Content);
+    }
+
+    [Fact]
+    public async Task ParseAsync_MultipleSheets_AllReturned()
+    {
+        using var stream = CreateXls(("Sheet1", new[] { new[] { "X" } }), ("Sheet2", new[] { new[] { "Y" } }));
+        var result = await _parser.ParseAsync(stream, CancellationToken.None);
+        Assert.Contains("Sheet1", result.Content);
+        Assert.Contains("Sheet2", result.Content);
+        Assert.Contains("X", result.Content);
+        Assert.Contains("Y", result.Content);
+    }
+
+    [Fact]
+    public async Task ParseAsync_EmptyWorkbook_ReturnsEmpty()
+    {
+        using var stream = CreateEmptyXls();
+        var result = await _parser.ParseAsync(stream, CancellationToken.None);
+        Assert.Equal(string.Empty, result.Content);
+    }
+
+    [Fact]
+    public async Task ParseAsync_ChineseContent_Preserved()
+    {
+        using var stream = CreateXls("数据", new[] { new[] { "你好", "世界" } });
+        var result = await _parser.ParseAsync(stream, CancellationToken.None);
+        Assert.Contains("你好", result.Content);
+        Assert.Contains("世界", result.Content);
+    }
+
+    [Fact]
+    public async Task ParseAsync_CancellationRequested_Throws()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        using var stream = CreateXls("S", new[] { new[] { "v" } });
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => _parser.ParseAsync(stream, cts.Token));
+    }
+
+    [Fact]
+    public void MimeTypes_ContainsXls()
+    {
+        Assert.Contains("application/vnd.ms-excel", _parser.MimeTypes);
+    }
+
+    private static MemoryStream CreateXls(string sheetName, string[][] rows)
+    {
+        return CreateXls((sheetName, rows));
+    }
+
+    private static MemoryStream CreateXls(params (string name, string[][] rows)[] sheets)
+    {
+        var ms = new MemoryStream();
+        using (var workbook = new NPOI.HSSF.UserModel.HSSFWorkbook())
+        {
+            uint sheetIdx = 0;
+            foreach (var (name, rows) in sheets)
+            {
+                var sheet = workbook.CreateSheet(name);
+                uint rowIdx = 0;
+                foreach (var cells in rows)
+                {
+                    var row = sheet.CreateRow((int)rowIdx++);
+                    uint colIdx = 0;
+                    foreach (var cellText in cells)
+                    {
+                        row.CreateCell((int)colIdx++).SetCellValue(cellText);
+                    }
+                }
+                sheetIdx++;
+            }
+            workbook.Write(ms);
+        }
+
+        ms.Position = 0;
+        return ms;
+    }
+
+    private static MemoryStream CreateEmptyXls()
+    {
+        var ms = new MemoryStream();
+        using (var workbook = new NPOI.HSSF.UserModel.HSSFWorkbook())
+        {
+            workbook.Write(ms);
         }
 
         ms.Position = 0;
@@ -430,5 +534,146 @@ public sealed class PptxParserTests
         using var stream = entry.Open();
         using var writer = new StreamWriter(stream, Encoding.UTF8);
         writer.Write(content);
+    }
+}
+
+// ============================================================
+// 本地文件测试：将下方路径替换为实际文件路径即可直接测试。
+// 文件不存在时测试自动跳过。
+// ============================================================
+
+/// <summary>DocxParser 本地文件测试。</summary>
+public sealed class DocxParserLocalFileTests
+{
+    private readonly DocxParser _parser = new();
+
+    // 替换为你的本地 .docx 文件路径
+    private const string TestFilePath = @"C:\test\sample.docx";
+
+    [Fact(Skip = "需要本地测试文件，取消 Skip 并填写路径后运行")]
+    public async Task Parse_LocalFile_ReturnsContent()
+    {
+        if (!File.Exists(TestFilePath)) return;
+
+        await using var stream = File.OpenRead(TestFilePath);
+        var result = await _parser.ParseAsync(stream, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.False(string.IsNullOrWhiteSpace(result.Content));
+    }
+
+    [Fact(Skip = "需要本地测试文件，取消 Skip 并填写路径后运行")]
+    public async Task Parse_LocalFile_ContentMatchesExpectation()
+    {
+        if (!File.Exists(TestFilePath)) return;
+
+        await using var stream = File.OpenRead(TestFilePath);
+        var result = await _parser.ParseAsync(stream, CancellationToken.None);
+
+        // 修改以下断言以匹配你的测试文件内容
+        Assert.NotNull(result);
+        Assert.NotEqual(string.Empty, result.Content.Trim());
+    }
+}
+
+/// <summary>XlsxParser 本地文件测试。</summary>
+public sealed class XlsxParserLocalFileTests
+{
+    private readonly XlsxParser _parser = new();
+
+    // 替换为你的本地 .xlsx 文件路径
+    private const string TestFilePath = @"C:\test\sample.xlsx";
+
+    [Fact(Skip = "需要本地测试文件，取消 Skip 并填写路径后运行")]
+    public async Task Parse_LocalFile_ReturnsContent()
+    {
+        if (!File.Exists(TestFilePath)) return;
+
+        await using var stream = File.OpenRead(TestFilePath);
+        var result = await _parser.ParseAsync(stream, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.False(string.IsNullOrWhiteSpace(result.Content));
+    }
+
+    [Fact(Skip = "需要本地测试文件，取消 Skip 并填写路径后运行")]
+    public async Task Parse_LocalFile_ContentMatchesExpectation()
+    {
+        if (!File.Exists(TestFilePath)) return;
+
+        await using var stream = File.OpenRead(TestFilePath);
+        var result = await _parser.ParseAsync(stream, CancellationToken.None);
+
+        // 修改以下断言以匹配你的测试文件内容
+        Assert.NotNull(result);
+        Assert.NotEqual(string.Empty, result.Content.Trim());
+    }
+}
+
+/// <summary>XlsParser 本地文件测试。</summary>
+public sealed class XlsParserLocalFileTests
+{
+    private readonly XlsParser _parser = new();
+
+    // 替换为你的本地 .xls 文件路径
+    private const string TestFilePath = @"C:\test\sample.xls";
+
+    [Fact(Skip = "需要本地测试文件，取消 Skip 并填写路径后运行")]
+    public async Task Parse_LocalFile_ReturnsContent()
+    {
+        if (!File.Exists(TestFilePath)) return;
+
+        await using var stream = File.OpenRead(TestFilePath);
+        var result = await _parser.ParseAsync(stream, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.False(string.IsNullOrWhiteSpace(result.Content));
+    }
+
+    [Fact(Skip = "需要本地测试文件，取消 Skip 并填写路径后运行")]
+    public async Task Parse_LocalFile_ContentMatchesExpectation()
+    {
+        if (!File.Exists(TestFilePath)) return;
+
+        await using var stream = File.OpenRead(TestFilePath);
+        var result = await _parser.ParseAsync(stream, CancellationToken.None);
+
+        // 修改以下断言以匹配你的测试文件内容
+        Assert.NotNull(result);
+        Assert.NotEqual(string.Empty, result.Content.Trim());
+    }
+}
+
+/// <summary>PptxParser 本地文件测试。</summary>
+public sealed class PptxParserLocalFileTests
+{
+    private readonly PptxParser _parser = new();
+
+    // 替换为你的本地 .pptx 文件路径
+    private const string TestFilePath = @"C:\test\sample.pptx";
+
+    [Fact(Skip = "需要本地测试文件，取消 Skip 并填写路径后运行")]
+    public async Task Parse_LocalFile_ReturnsContent()
+    {
+        if (!File.Exists(TestFilePath)) return;
+
+        await using var stream = File.OpenRead(TestFilePath);
+        var result = await _parser.ParseAsync(stream, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.False(string.IsNullOrWhiteSpace(result.Content));
+    }
+
+    [Fact(Skip = "需要本地测试文件，取消 Skip 并填写路径后运行")]
+    public async Task Parse_LocalFile_ContentMatchesExpectation()
+    {
+        if (!File.Exists(TestFilePath)) return;
+
+        await using var stream = File.OpenRead(TestFilePath);
+        var result = await _parser.ParseAsync(stream, CancellationToken.None);
+
+        // 修改以下断言以匹配你的测试文件内容
+        Assert.NotNull(result);
+        Assert.NotEqual(string.Empty, result.Content.Trim());
     }
 }

@@ -1,11 +1,13 @@
-using DocumentFormat.OpenXml.Packaging;
-using DocumentFormat.OpenXml.Presentation;
+using NPOI.XWPF.UserModel;
+using NPOI.XSSF.UserModel;
+using NPOI.HSSF.UserModel;
+using SSModel = NPOI.SS.UserModel;
 
 namespace TigerRAG.Infrastructure.Parsing;
 
 using TigerRAG.Application.Documents.Indexing;
 
-/// <summary>DOCX 解析器：提取段落和表格文本。</summary>
+/// <summary>DOCX 解析器（NPOI XWPF）：提取段落和表格文本。</summary>
 internal sealed class DocxParser : ISpecificParser
 {
     private static readonly HashSet<string> Mimes = new(StringComparer.OrdinalIgnoreCase)
@@ -21,41 +23,36 @@ internal sealed class DocxParser : ISpecificParser
         cancellationToken.ThrowIfCancellationRequested();
         var sb = new System.Text.StringBuilder();
 
-        using var doc = WordprocessingDocument.Open(content, false);
-        var body = doc.MainDocumentPart?.Document?.Body;
-        if (body is null)
-        {
-            return Task.FromResult(new DocumentParseResult(string.Empty, Array.Empty<ExtractedImage>()));
-        }
-
-        foreach (var element in body.ChildElements)
+        using var doc = new XWPFDocument(content);
+        foreach (var bodyElement in doc.BodyElements)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (element is DocumentFormat.OpenXml.Wordprocessing.Paragraph para)
+            switch (bodyElement)
             {
-                var text = para.InnerText.Trim();
-                if (text.Length > 0)
-                {
-                    sb.AppendLine(text);
-                }
-            }
-            else if (element is DocumentFormat.OpenXml.Wordprocessing.Table table)
-            {
-                ExtractTable(table, sb);
+                case XWPFParagraph para:
+                    var paraText = para.Text.Trim();
+                    if (paraText.Length > 0)
+                    {
+                        sb.AppendLine(paraText);
+                    }
+                    break;
+                case XWPFTable table:
+                    ExtractTable(table, sb);
+                    break;
             }
         }
 
         return Task.FromResult(new DocumentParseResult(sb.ToString().Trim(), Array.Empty<ExtractedImage>()));
     }
 
-    private static void ExtractTable(DocumentFormat.OpenXml.Wordprocessing.Table table, System.Text.StringBuilder sb)
+    private static void ExtractTable(XWPFTable table, System.Text.StringBuilder sb)
     {
-        foreach (var row in table.Elements<DocumentFormat.OpenXml.Wordprocessing.TableRow>())
+        foreach (var row in table.Rows)
         {
             var cells = new List<string>();
-            foreach (var cell in row.Elements<DocumentFormat.OpenXml.Wordprocessing.TableCell>())
+            foreach (var cell in row.GetTableCells())
             {
-                var cellText = cell.InnerText.Trim();
+                var cellText = cell.GetText().Trim();
                 cells.Add(cellText);
             }
             sb.AppendLine(string.Join("\t", cells));
@@ -63,13 +60,12 @@ internal sealed class DocxParser : ISpecificParser
     }
 }
 
-/// <summary>XLSX 解析器：提取工作表单元格文本。</summary>
+/// <summary>XLSX 解析器（NPOI XSSF）：提取工作表单元格文本。</summary>
 internal sealed class XlsxParser : ISpecificParser
 {
     private static readonly HashSet<string> Mimes = new(StringComparer.OrdinalIgnoreCase)
     {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "application/vnd.ms-excel",
     };
 
     public IReadOnlySet<string> MimeTypes => Mimes;
@@ -80,33 +76,22 @@ internal sealed class XlsxParser : ISpecificParser
         cancellationToken.ThrowIfCancellationRequested();
         var sb = new System.Text.StringBuilder();
 
-        using var doc = SpreadsheetDocument.Open(content, false);
-        var workbook = doc.WorkbookPart?.Workbook;
-        if (workbook is null)
-        {
-            return Task.FromResult(new DocumentParseResult(string.Empty, Array.Empty<ExtractedImage>()));
-        }
-
-        var sheetNameMap = new Dictionary<string, string>();
-        foreach (var sheet in workbook.Sheets.Cast<DocumentFormat.OpenXml.Spreadsheet.Sheet>())
-        {
-            sheetNameMap[sheet.Id!.Value] = sheet.Name?.Value ?? "Sheet";
-        }
-
-        foreach (var sheet in workbook.Sheets.Cast<DocumentFormat.OpenXml.Spreadsheet.Sheet>())
+        using var workbook = new XSSFWorkbook(content);
+        for (var i = 0; i < workbook.NumberOfSheets; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var sheetName = sheet.Name?.Value ?? "Sheet";
+            var sheet = workbook.GetSheetAt(i);
+            var sheetName = sheet.SheetName;
             sb.AppendLine($"--- {sheetName} ---");
 
-            var worksheetPart = (WorksheetPart)doc.WorkbookPart!.GetPartById(sheet.Id!.Value);
-            var rows = worksheetPart.Worksheet.Descendants<DocumentFormat.OpenXml.Spreadsheet.Row>();
-            foreach (var row in rows)
+            for (var r = sheet.FirstRowNum; r <= sheet.LastRowNum; r++)
             {
+                var row = sheet.GetRow(r);
+                if (row is null) continue;
                 var cells = new List<string>();
-                foreach (var cell in row.Elements<DocumentFormat.OpenXml.Spreadsheet.Cell>())
+                foreach (var cell in row)
                 {
-                    cells.Add(GetCellValue(cell, doc));
+                    cells.Add(GetCellValue(cell));
                 }
                 var line = string.Join("\t", cells);
                 if (line.Trim().Length > 0)
@@ -119,87 +104,83 @@ internal sealed class XlsxParser : ISpecificParser
         return Task.FromResult(new DocumentParseResult(sb.ToString().Trim(), Array.Empty<ExtractedImage>()));
     }
 
-    private static string GetCellValue(DocumentFormat.OpenXml.Spreadsheet.Cell cell, SpreadsheetDocument doc)
+    private static string GetCellValue(SSModel.ICell cell)
     {
-        var value = cell.InnerText;
-        if (cell.DataType?.Value == DocumentFormat.OpenXml.Spreadsheet.CellValues.SharedString)
+        if (cell is null) return string.Empty;
+        return cell.CellType switch
         {
-            var sharedPart = doc.WorkbookPart?.SharedStringTablePart;
-            if (sharedPart is not null && int.TryParse(value, out var index))
-            {
-                var items = sharedPart.SharedStringTable.Elements<DocumentFormat.OpenXml.Spreadsheet.SharedStringItem>().ToList();
-                if (index < items.Count)
-                {
-                    value = items[index].InnerText;
-                }
-            }
-        }
-        return value.Trim();
+            SSModel.CellType.String => cell.StringCellValue.Trim(),
+            SSModel.CellType.Numeric => SSModel.DateUtil.IsCellDateFormatted(cell)
+                ? cell.DateCellValue?.ToString("yyyy-MM-dd") ?? string.Empty
+                : cell.NumericCellValue.ToString(),
+            SSModel.CellType.Boolean => cell.BooleanCellValue.ToString(),
+            SSModel.CellType.Formula => cell!.ToString().Trim(),
+            _ => string.Empty,
+        };
     }
 }
 
-/// <summary>PPTX 解析器：提取幻灯片文本。</summary>
-internal sealed class PptxParser : ISpecificParser
+/// <summary>XLS 解析器（NPOI HSSF）：提取工作表单元格文本。</summary>
+internal sealed class XlsParser : ISpecificParser
 {
     private static readonly HashSet<string> Mimes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.ms-excel",
     };
 
     public IReadOnlySet<string> MimeTypes => Mimes;
 
-    /// <summary>从 PPTX 中提取幻灯片文本。</summary>
+    /// <summary>从 XLS（Excel 97-2003 二进制格式）中提取工作表单元格文本。</summary>
     public Task<DocumentParseResult> ParseAsync(Stream content, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var sb = new System.Text.StringBuilder();
 
-        using var doc = PresentationDocument.Open(content, false);
-        var presentationPart = doc.PresentationPart;
-        if (presentationPart is null)
-        {
-            return Task.FromResult(new DocumentParseResult(string.Empty, Array.Empty<ExtractedImage>()));
-        }
+        // HSSFWorkbook 需要可随机读取的流，先复制到内存。
+        using var ms = new MemoryStream();
+        content.CopyTo(ms);
+        ms.Position = 0;
 
-        var slideIds = presentationPart.Presentation.SlideIdList?.Elements<SlideId>().ToList();
-        if (slideIds is null || slideIds.Count == 0)
-        {
-            return Task.FromResult(new DocumentParseResult(string.Empty, Array.Empty<ExtractedImage>()));
-        }
-
-        var first = true;
-        foreach (var slideId in slideIds)
+        using var workbook = new HSSFWorkbook(ms);
+        for (var i = 0; i < workbook.NumberOfSheets; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!first)
-            {
-                sb.AppendLine("---");
-            }
-            first = false;
+            var sheet = workbook.GetSheetAt(i);
+            var sheetName = sheet.SheetName;
+            sb.AppendLine($"--- {sheetName} ---");
 
-            var relationshipId = slideId.RelationshipId;
-            if (relationshipId is null)
+            for (var r = sheet.FirstRowNum; r <= sheet.LastRowNum; r++)
             {
-                continue;
-            }
-
-            var slidePart = (SlidePart?)presentationPart.GetPartById(relationshipId);
-            if (slidePart?.Slide is null)
-            {
-                continue;
-            }
-
-            var texts = slidePart.Slide.Descendants<DocumentFormat.OpenXml.Drawing.Text>();
-            foreach (var text in texts)
-            {
-                var value = text.Text;
-                if (value.Length > 0)
+                var row = sheet.GetRow(r);
+                if (row is null) continue;
+                var cells = new List<string>();
+                foreach (var cell in row)
                 {
-                    sb.AppendLine(value);
+                    cells.Add(GetCellValue(cell));
+                }
+                var line = string.Join("\t", cells);
+                if (line.Trim().Length > 0)
+                {
+                    sb.AppendLine(line);
                 }
             }
         }
 
         return Task.FromResult(new DocumentParseResult(sb.ToString().Trim(), Array.Empty<ExtractedImage>()));
+    }
+
+    private static string GetCellValue(SSModel.ICell cell)
+    {
+        if (cell is null) return string.Empty;
+        return cell.CellType switch
+        {
+            SSModel.CellType.String => cell.StringCellValue.Trim(),
+            SSModel.CellType.Numeric => SSModel.DateUtil.IsCellDateFormatted(cell)
+                ? cell.DateCellValue?.ToString("yyyy-MM-dd") ?? string.Empty
+                : cell.NumericCellValue.ToString(),
+            SSModel.CellType.Boolean => cell.BooleanCellValue.ToString(),
+            SSModel.CellType.Formula => cell!.ToString().Trim(),
+            _ => string.Empty,
+        };
     }
 }

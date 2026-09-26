@@ -11,7 +11,7 @@ internal sealed class SvgParser : ISpecificParser
     {
         "image/svg+xml",
     };
-
+     
     private static readonly HashSet<string> TextElements = new(StringComparer.OrdinalIgnoreCase)
     {
         "text", "tspan", "textPath",

@@ -18,6 +18,7 @@ public sealed class MimeDispatchingParser : IDocumentParser
             new HtmlParser(),
             new SvgParser(),
             new DocxParser(),
+            new XlsParser(),
             new XlsxParser(),
             new PptxParser(),
             new PdfParser(),
