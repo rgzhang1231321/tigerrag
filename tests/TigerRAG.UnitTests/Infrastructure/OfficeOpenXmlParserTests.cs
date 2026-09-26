@@ -548,9 +548,9 @@ public sealed class DocxParserLocalFileTests
     private readonly DocxParser _parser = new();
 
     // 替换为你的本地 .docx 文件路径
-    private const string TestFilePath = @"C:\test\sample.docx";
+    private const string TestFilePath = @"D:\360Downloads\张荣刚交接单.docx";
 
-    [Fact(Skip = "需要本地测试文件，取消 Skip 并填写路径后运行")]
+    [Fact]
     public async Task Parse_LocalFile_ReturnsContent()
     {
         if (!File.Exists(TestFilePath)) return;
@@ -562,7 +562,7 @@ public sealed class DocxParserLocalFileTests
         Assert.False(string.IsNullOrWhiteSpace(result.Content));
     }
 
-    [Fact(Skip = "需要本地测试文件，取消 Skip 并填写路径后运行")]
+    [Fact]
     public async Task Parse_LocalFile_ContentMatchesExpectation()
     {
         if (!File.Exists(TestFilePath)) return;
@@ -581,10 +581,9 @@ public sealed class XlsxParserLocalFileTests
 {
     private readonly XlsxParser _parser = new();
 
-    // 替换为你的本地 .xlsx 文件路径
-    private const string TestFilePath = @"C:\test\sample.xlsx";
+    private const string TestFilePath = @"D:\360Downloads\北京安德普泰医疗科技-部门-导出.xlsx";
 
-    [Fact(Skip = "需要本地测试文件，取消 Skip 并填写路径后运行")]
+    [Fact]
     public async Task Parse_LocalFile_ReturnsContent()
     {
         if (!File.Exists(TestFilePath)) return;
@@ -596,7 +595,7 @@ public sealed class XlsxParserLocalFileTests
         Assert.False(string.IsNullOrWhiteSpace(result.Content));
     }
 
-    [Fact(Skip = "需要本地测试文件，取消 Skip 并填写路径后运行")]
+    [Fact]
     public async Task Parse_LocalFile_ContentMatchesExpectation()
     {
         if (!File.Exists(TestFilePath)) return;
@@ -604,7 +603,6 @@ public sealed class XlsxParserLocalFileTests
         await using var stream = File.OpenRead(TestFilePath);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
 
-        // 修改以下断言以匹配你的测试文件内容
         Assert.NotNull(result);
         Assert.NotEqual(string.Empty, result.Content.Trim());
     }
@@ -615,10 +613,9 @@ public sealed class XlsParserLocalFileTests
 {
     private readonly XlsParser _parser = new();
 
-    // 替换为你的本地 .xls 文件路径
-    private const string TestFilePath = @"C:\test\sample.xls";
+    private const string TestFilePath = @"D:\360Downloads\测试域名配置信息.xls";
 
-    [Fact(Skip = "需要本地测试文件，取消 Skip 并填写路径后运行")]
+    [Fact]
     public async Task Parse_LocalFile_ReturnsContent()
     {
         if (!File.Exists(TestFilePath)) return;
@@ -630,7 +627,7 @@ public sealed class XlsParserLocalFileTests
         Assert.False(string.IsNullOrWhiteSpace(result.Content));
     }
 
-    [Fact(Skip = "需要本地测试文件，取消 Skip 并填写路径后运行")]
+    [Fact]
     public async Task Parse_LocalFile_ContentMatchesExpectation()
     {
         if (!File.Exists(TestFilePath)) return;
@@ -638,7 +635,6 @@ public sealed class XlsParserLocalFileTests
         await using var stream = File.OpenRead(TestFilePath);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
 
-        // 修改以下断言以匹配你的测试文件内容
         Assert.NotNull(result);
         Assert.NotEqual(string.Empty, result.Content.Trim());
     }
