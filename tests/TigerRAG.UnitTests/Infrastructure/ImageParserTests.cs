@@ -1,53 +1,33 @@
 using System.Text;
-using TigerRAG.Application.Documents.Indexing.Interface;
+using TigerRAG.Application.Documents.Indexing;
 using TigerRAG.Infrastructure.Parsing;
 
 namespace TigerRAG.UnitTests.Infrastructure;
 
-/// <summary>ImageParser 单元测试：依赖 IImageDescriptor 生成描述。</summary>
+/// <summary>ImageParser 单元测试：当前阶段返回空内容，后续图片提取阶段扩展。</summary>
 public sealed class ImageParserTests
 {
     [Fact]
-    public async Task ParseAsync_WithDescriptor_ReturnsDescription()
+    public async Task ParseAsync_ReturnsEmptyContent()
     {
-        var descriptor = new StubImageDescriptor("A beautiful landscape");
-        var parser = new ImageParser(descriptor);
+        var parser = new ImageParser();
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes("fake-image-bytes"));
 
         var result = await parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal("A beautiful landscape", result);
+
+        Assert.Equal(string.Empty, result.Content);
+        Assert.Empty(result.Images);
     }
 
     [Fact]
-    public async Task ParseAsync_WithoutDescriptor_ReturnsNotConfigured()
+    public async Task ParseAsync_EmptyStream_ReturnsEmptyContent()
     {
-        var parser = new ImageParser(null);
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("fake-image-bytes"));
-
-        var result = await parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal("[图片: 未配置描述服务]", result);
-    }
-
-    [Fact]
-    public async Task ParseAsync_EmptyStream_ReturnsEmpty()
-    {
-        var descriptor = new StubImageDescriptor("should not be called");
-        var parser = new ImageParser(descriptor);
+        var parser = new ImageParser();
         using var stream = new MemoryStream();
 
         var result = await parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal(string.Empty, result);
-    }
 
-    [Fact]
-    public async Task ParseAsync_DescriptorThrows_ReturnsFailureMessage()
-    {
-        var descriptor = new ThrowingImageDescriptor();
-        var parser = new ImageParser(descriptor);
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("fake-image-bytes"));
-
-        var result = await parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal("[图片: 描述失败]", result);
+        Assert.Equal(string.Empty, result.Content);
     }
 
     [Fact]
@@ -55,7 +35,7 @@ public sealed class ImageParserTests
     {
         using var cts = new CancellationTokenSource();
         cts.Cancel();
-        var parser = new ImageParser(new StubImageDescriptor("unused"));
+        var parser = new ImageParser();
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes("data"));
         await Assert.ThrowsAsync<OperationCanceledException>(
             () => parser.ParseAsync(stream, cts.Token));
@@ -64,43 +44,12 @@ public sealed class ImageParserTests
     [Fact]
     public void MimeTypes_ContainsCommonImageTypes()
     {
-        var parser = new ImageParser(null);
+        var parser = new ImageParser();
         Assert.Contains("image/png", parser.MimeTypes);
         Assert.Contains("image/jpeg", parser.MimeTypes);
         Assert.Contains("image/gif", parser.MimeTypes);
         Assert.Contains("image/webp", parser.MimeTypes);
         Assert.Contains("image/bmp", parser.MimeTypes);
         Assert.Contains("image/tiff", parser.MimeTypes);
-    }
-
-    /// <summary>测试用的固定描述实现。</summary>
-    private sealed class StubImageDescriptor : IImageDescriptor
-    {
-        private readonly string _description;
-
-        public StubImageDescriptor(string description)
-        {
-            _description = description;
-        }
-
-        public Task<string> DescribeAsync(
-            ReadOnlyMemory<byte> imageBytes,
-            string mimeType,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromResult(_description);
-        }
-    }
-
-    /// <summary>测试用的抛异常描述实现。</summary>
-    private sealed class ThrowingImageDescriptor : IImageDescriptor
-    {
-        public Task<string> DescribeAsync(
-            ReadOnlyMemory<byte> imageBytes,
-            string mimeType,
-            CancellationToken cancellationToken)
-        {
-            throw new InvalidOperationException("LLM service unavailable");
-        }
     }
 }

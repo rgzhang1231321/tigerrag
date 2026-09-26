@@ -14,7 +14,7 @@ public sealed class SvgParserTests
         var svg = @"<svg xmlns=""http://www.w3.org/2000/svg""><text>Hello SVG</text></svg>";
         using var stream = ToStream(svg);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Hello SVG", result);
+        Assert.Contains("Hello SVG", result.Content);
     }
 
     [Fact]
@@ -23,7 +23,7 @@ public sealed class SvgParserTests
         var svg = @"<svg xmlns=""http://www.w3.org/2000/svg""><text><tspan>Tspan content</tspan></text></svg>";
         using var stream = ToStream(svg);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Tspan content", result);
+        Assert.Contains("Tspan content", result.Content);
     }
 
     [Fact]
@@ -32,7 +32,7 @@ public sealed class SvgParserTests
         var svg = @"<svg xmlns=""http://www.w3.org/2000/svg""><textPath>Path text</textPath></svg>";
         using var stream = ToStream(svg);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Path text", result);
+        Assert.Contains("Path text", result.Content);
     }
 
     [Fact]
@@ -44,8 +44,8 @@ public sealed class SvgParserTests
 </svg>";
         using var stream = ToStream(svg);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("First", result);
-        Assert.Contains("Second", result);
+        Assert.Contains("First", result.Content);
+        Assert.Contains("Second", result.Content);
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed class SvgParserTests
         var svg = @"<svg xmlns=""http://www.w3.org/2000/svg""></svg>";
         using var stream = ToStream(svg);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal(string.Empty, result);
+        Assert.Equal(string.Empty, result.Content);
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public sealed class SvgParserTests
         var svg = @"<svg xmlns=""http://www.w3.org/2000/svg""><text>你好 SVG</text></svg>";
         using var stream = ToStream(svg);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("你好 SVG", result);
+        Assert.Contains("你好 SVG", result.Content);
     }
 
     [Fact]

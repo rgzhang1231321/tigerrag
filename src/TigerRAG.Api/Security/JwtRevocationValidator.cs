@@ -3,7 +3,6 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using StackExchange.Redis;
 using TigerRAG.Application.Auth;
 using TigerRAG.Application.Users;
 
@@ -12,7 +11,7 @@ namespace TigerRAG.Api.Security;
 /// <summary>
 /// JWT 撤权校验器：每个已签名请求进 OnTokenValidated 时把 claim 中的 security_stamp
 /// 与缓存（Redis L1）/DB 实时值比对；用户不存在、stamp 不匹配、或已锁定均 <c>context.Fail</c>。
-/// Redis 不可达视为缓存 miss，回退 DB 走安全路径。
+/// 缓存不可达由缓存实现内部处理（记录日志 + 按 miss 处理），本校验器直接走 DB 安全路径。
 /// </summary>
 public static class JwtRevocationValidator
 {
@@ -69,16 +68,8 @@ public static class JwtRevocationValidator
         var cache = services.GetRequiredService<IAuthRevocationCache>();
         var users = services.GetRequiredService<IUserDal>();
 
-        // 缓存不可达 → 视为 miss，直接走 DB；安全语义优先于性能。
-        string? cached = null;
-        try
-        {
-            cached = await cache.GetStampAsync(userId, context.HttpContext.RequestAborted);
-        }
-        catch (RedisConnectionException error)
-        {
-            logger.LogWarning(error, "Revocation cache unavailable; falling back to database.");
-        }
+        // 缓存不可达由实现内部处理（记录日志 + 返回 null）；此处 null 等价于 miss，直接走 DB 安全路径。
+        var cached = await cache.GetStampAsync(userId, context.HttpContext.RequestAborted);
 
         string currentStamp;
         bool isLocked;
@@ -100,15 +91,8 @@ public static class JwtRevocationValidator
             currentStamp = snapshot.SecurityStamp;
             isLocked = snapshot.IsLocked;
 
-            try
-            {
-                await cache.SetStampAsync(userId, currentStamp, context.HttpContext.RequestAborted);
-            }
-            catch (RedisConnectionException error)
-            {
-                // 缓存写失败不影响本次请求；下次再回填。
-                logger.LogWarning(error, "Revocation cache write failed.");
-            }
+            // 回填缓存；写入失败由实现内部记录日志并吞掉，不影响本次请求。
+            await cache.SetStampAsync(userId, currentStamp, context.HttpContext.RequestAborted);
         }
 
         if (!string.Equals(claimStamp, currentStamp, StringComparison.Ordinal))

@@ -14,7 +14,7 @@ public sealed class TextParserTests
         var text = "Hello, 世界！";
         using var stream = ToStream(text);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal(text, result);
+        Assert.Equal(text, result.Content);
     }
 
     [Fact]
@@ -23,7 +23,7 @@ public sealed class TextParserTests
         var text = "name,age\nAlice,30\nBob,25";
         using var stream = ToStream(text);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal(text, result);
+        Assert.Equal(text, result.Content);
     }
 
     [Fact]
@@ -32,7 +32,7 @@ public sealed class TextParserTests
         var text = "# Title\n\nSome **bold** text.";
         using var stream = ToStream(text);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal(text, result);
+        Assert.Equal(text, result.Content);
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public sealed class TextParserTests
     {
         using var stream = new MemoryStream();
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal(string.Empty, result);
+        Assert.Equal(string.Empty, result.Content);
     }
 
     [Fact]

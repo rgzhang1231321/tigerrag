@@ -14,7 +14,7 @@ public sealed class EmlParserTests
     {
         using var stream = CreateEml("plain", "Hello email body");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Hello email body", result);
+        Assert.Contains("Hello email body", result.Content);
     }
 
     [Fact]
@@ -22,10 +22,10 @@ public sealed class EmlParserTests
     {
         using var stream = CreateEml("html", "<p>Hello <b>World</b></p>");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Hello", result);
-        Assert.Contains("World", result);
-        Assert.DoesNotContain("<p>", result);
-        Assert.DoesNotContain("<b>", result);
+        Assert.Contains("Hello", result.Content);
+        Assert.Contains("World", result.Content);
+        Assert.DoesNotContain("<p>", result.Content);
+        Assert.DoesNotContain("<b>", result.Content);
     }
 
     [Fact]
@@ -43,8 +43,8 @@ public sealed class EmlParserTests
 
         using var stream = ToStream(message);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Plain text version", result);
-        Assert.DoesNotContain("HTML version", result);
+        Assert.Contains("Plain text version", result.Content);
+        Assert.DoesNotContain("HTML version", result.Content);
     }
 
     [Fact]
@@ -57,7 +57,7 @@ public sealed class EmlParserTests
 
         using var stream = ToStream(message);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal(string.Empty, result);
+        Assert.Equal(string.Empty, result.Content);
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public sealed class EmlParserTests
     {
         using var stream = CreateEml("plain", "你好邮件内容");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("你好邮件内容", result);
+        Assert.Contains("你好邮件内容", result.Content);
     }
 
     [Fact]

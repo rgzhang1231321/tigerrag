@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using StackExchange.Redis;
 using TigerRAG.Application.Auth;
 
 namespace TigerRAG.Infrastructure.Auth;
@@ -9,7 +8,7 @@ namespace TigerRAG.Infrastructure.Auth;
 /// 缓存键粒度：每个 role 一条 Set，存放该角色全部被授予的 EndpointKey。
 /// 读路径：按用户角色逐个 <c>GetRoleEndpointsAsync</c>；miss 时回 <see cref="IRoleEndpointGrantStore.ListByRoleAsync"/> 回填。
 /// 写路径：所有 mutating 操作先落 DB，再 <see cref="IRoleEndpointGrantCache.InvalidateRoleAsync"/> 清掉该角色缓存。
-/// Redis 不可达时按"缓存 miss"等价处理，写失败被吞（TTL 兜底）。
+/// 缓存实现内部已处理传输层异常（记录日志 + 按 miss/忽略处理），本装饰器不再 catch。
 /// </summary>
 public sealed class CachedRoleEndpointGrantStore(
     IRoleEndpointGrantStore inner,
@@ -28,15 +27,8 @@ public sealed class CachedRoleEndpointGrantStore(
         // 去重：同一角色多次出现时只查一次缓存。
         foreach (var role in userRoles.Distinct(StringComparer.Ordinal))
         {
-            IReadOnlySet<string>? cached = null;
-            try
-            {
-                cached = await cache.GetRoleEndpointsAsync(role, cancellationToken);
-            }
-            catch (RedisConnectionException error)
-            {
-                logger.LogWarning(error, "授权缓存读取失败；该角色回退 DB。role={Role}", role);
-            }
+            // 缓存实现内部已处理传输层异常：不可达时返回 null，等价于 miss。
+            var cached = await cache.GetRoleEndpointsAsync(role, cancellationToken);
 
             if (cached is null)
             {
@@ -47,8 +39,9 @@ public sealed class CachedRoleEndpointGrantStore(
                 {
                     await cache.SetRoleEndpointsAsync(role, keys, cancellationToken);
                 }
-                catch (RedisConnectionException error)
+                catch (Exception error)
                 {
+                    // 防御性：即便实现承诺吞异常，仍记录以防万一；回填失败由 TTL 兜底。
                     logger.LogWarning(error, "授权缓存回填失败。role={Role}", role);
                 }
 
@@ -116,9 +109,9 @@ public sealed class CachedRoleEndpointGrantStore(
         {
             await cache.InvalidateRoleAsync(roleName, cancellationToken);
         }
-        catch (RedisConnectionException error)
+        catch (Exception error)
         {
-            // 缓存清理失败：TTL 兜底，调用方无需重试；只记录供运维定位。
+            // 防御性：实现承诺吞异常；缓存清理失败由 TTL 兜底，调用方无需重试。
             logger.LogWarning(error, "授权缓存失效失败。role={Role}", roleName);
         }
     }

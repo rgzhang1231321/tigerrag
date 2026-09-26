@@ -1,11 +1,11 @@
 using TigerRAG.Application.Documents;
 using TigerRAG.Application.Documents.Indexing;
+using TigerRAG.Application.Documents.Indexing.Interface;
 using TigerRAG.Application.Documents.Lifecycle;
 using TigerRAG.Application.OperationAudit;
 using TigerRAG.Application.Shared;
 using TigerRAG.Domain.Documents;
 using Microsoft.Extensions.Logging;
-using TigerRAG.Application.Documents.Indexing.Interface;
 
 namespace TigerRAG.UnitTests.Documents;
 
@@ -149,16 +149,16 @@ public sealed class DocumentIndexingServiceTests
 
     private sealed class RecordingParser(List<string> calls) : IDocumentParser
     {
-        public Task<string> ParseAsync(Stream content, string? mimeType, CancellationToken cancellationToken)
+        public Task<DocumentParseResult> ParseAsync(Stream content, string? mimeType, CancellationToken cancellationToken)
         {
             calls.Add("parse");
-            return Task.FromResult("TigerRAG content");
+            return Task.FromResult(new DocumentParseResult("TigerRAG content", Array.Empty<ExtractedImage>()));
         }
     }
 
     private sealed class FailingParser(string message) : IDocumentParser
     {
-        public Task<string> ParseAsync(Stream content, string? mimeType, CancellationToken cancellationToken)
+        public Task<DocumentParseResult> ParseAsync(Stream content, string? mimeType, CancellationToken cancellationToken)
             => throw new InvalidOperationException(message);
     }
 

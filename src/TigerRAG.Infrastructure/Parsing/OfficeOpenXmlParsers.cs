@@ -3,6 +3,8 @@ using DocumentFormat.OpenXml.Presentation;
 
 namespace TigerRAG.Infrastructure.Parsing;
 
+using TigerRAG.Application.Documents.Indexing;
+
 /// <summary>DOCX 解析器：提取段落和表格文本。</summary>
 internal sealed class DocxParser : ISpecificParser
 {
@@ -13,7 +15,8 @@ internal sealed class DocxParser : ISpecificParser
 
     public IReadOnlySet<string> MimeTypes => Mimes;
 
-    public Task<string> ParseAsync(Stream content, CancellationToken cancellationToken)
+    /// <summary>从 DOCX 中提取段落和表格文本。</summary>
+    public Task<DocumentParseResult> ParseAsync(Stream content, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var sb = new System.Text.StringBuilder();
@@ -22,7 +25,7 @@ internal sealed class DocxParser : ISpecificParser
         var body = doc.MainDocumentPart?.Document?.Body;
         if (body is null)
         {
-            return Task.FromResult(string.Empty);
+            return Task.FromResult(new DocumentParseResult(string.Empty, Array.Empty<ExtractedImage>()));
         }
 
         foreach (var element in body.ChildElements)
@@ -42,7 +45,7 @@ internal sealed class DocxParser : ISpecificParser
             }
         }
 
-        return Task.FromResult(sb.ToString().Trim());
+        return Task.FromResult(new DocumentParseResult(sb.ToString().Trim(), Array.Empty<ExtractedImage>()));
     }
 
     private static void ExtractTable(DocumentFormat.OpenXml.Wordprocessing.Table table, System.Text.StringBuilder sb)
@@ -71,7 +74,8 @@ internal sealed class XlsxParser : ISpecificParser
 
     public IReadOnlySet<string> MimeTypes => Mimes;
 
-    public Task<string> ParseAsync(Stream content, CancellationToken cancellationToken)
+    /// <summary>从 XLSX 中提取工作表单元格文本。</summary>
+    public Task<DocumentParseResult> ParseAsync(Stream content, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var sb = new System.Text.StringBuilder();
@@ -80,7 +84,7 @@ internal sealed class XlsxParser : ISpecificParser
         var workbook = doc.WorkbookPart?.Workbook;
         if (workbook is null)
         {
-            return Task.FromResult(string.Empty);
+            return Task.FromResult(new DocumentParseResult(string.Empty, Array.Empty<ExtractedImage>()));
         }
 
         var sheetNameMap = new Dictionary<string, string>();
@@ -112,7 +116,7 @@ internal sealed class XlsxParser : ISpecificParser
             }
         }
 
-        return Task.FromResult(sb.ToString().Trim());
+        return Task.FromResult(new DocumentParseResult(sb.ToString().Trim(), Array.Empty<ExtractedImage>()));
     }
 
     private static string GetCellValue(DocumentFormat.OpenXml.Spreadsheet.Cell cell, SpreadsheetDocument doc)
@@ -144,7 +148,8 @@ internal sealed class PptxParser : ISpecificParser
 
     public IReadOnlySet<string> MimeTypes => Mimes;
 
-    public Task<string> ParseAsync(Stream content, CancellationToken cancellationToken)
+    /// <summary>从 PPTX 中提取幻灯片文本。</summary>
+    public Task<DocumentParseResult> ParseAsync(Stream content, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var sb = new System.Text.StringBuilder();
@@ -153,13 +158,13 @@ internal sealed class PptxParser : ISpecificParser
         var presentationPart = doc.PresentationPart;
         if (presentationPart is null)
         {
-            return Task.FromResult(string.Empty);
+            return Task.FromResult(new DocumentParseResult(string.Empty, Array.Empty<ExtractedImage>()));
         }
 
         var slideIds = presentationPart.Presentation.SlideIdList?.Elements<SlideId>().ToList();
         if (slideIds is null || slideIds.Count == 0)
         {
-            return Task.FromResult(string.Empty);
+            return Task.FromResult(new DocumentParseResult(string.Empty, Array.Empty<ExtractedImage>()));
         }
 
         var first = true;
@@ -195,6 +200,6 @@ internal sealed class PptxParser : ISpecificParser
             }
         }
 
-        return Task.FromResult(sb.ToString().Trim());
+        return Task.FromResult(new DocumentParseResult(sb.ToString().Trim(), Array.Empty<ExtractedImage>()));
     }
 }

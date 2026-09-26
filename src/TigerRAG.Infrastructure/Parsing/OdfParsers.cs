@@ -4,6 +4,8 @@ using System.Xml.Linq;
 
 namespace TigerRAG.Infrastructure.Parsing;
 
+using TigerRAG.Application.Documents.Indexing;
+
 /// <summary>ODT 解析器：ZIP 解压后提取 content.xml 中的 &lt;text:p&gt; 节点。</summary>
 internal sealed class OdtParser : ISpecificParser
 {
@@ -14,10 +16,12 @@ internal sealed class OdtParser : ISpecificParser
 
     public IReadOnlySet<string> MimeTypes => Mimes;
 
-    public Task<string> ParseAsync(Stream content, CancellationToken cancellationToken)
+    /// <summary>从 ODT content.xml 中提取 text:p 节点文本。</summary>
+    public Task<DocumentParseResult> ParseAsync(Stream content, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(ExtractTextFromOdf(content, "text:p", cancellationToken));
+        var text = ExtractTextFromOdf(content, "text:p", cancellationToken);
+        return Task.FromResult(new DocumentParseResult(text, Array.Empty<ExtractedImage>()));
     }
 
     /// <summary>从 ODF content.xml 中提取指定本地名称的元素文本。</summary>
@@ -62,14 +66,15 @@ internal sealed class OdsParser : ISpecificParser
 
     public IReadOnlySet<string> MimeTypes => Mimes;
 
-    public Task<string> ParseAsync(Stream content, CancellationToken cancellationToken)
+    /// <summary>从 ODS content.xml 中提取表格行单元格文本。</summary>
+    public Task<DocumentParseResult> ParseAsync(Stream content, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         using var archive = new ZipArchive(content, ZipArchiveMode.Read, leaveOpen: true);
         var entry = archive.GetEntry("content.xml");
         if (entry is null)
         {
-            return Task.FromResult(string.Empty);
+            return Task.FromResult(new DocumentParseResult(string.Empty, Array.Empty<ExtractedImage>()));
         }
 
         var sb = new System.Text.StringBuilder();
@@ -118,7 +123,7 @@ internal sealed class OdsParser : ISpecificParser
             }
         }
 
-        return Task.FromResult(sb.ToString().Trim());
+        return Task.FromResult(new DocumentParseResult(sb.ToString().Trim(), Array.Empty<ExtractedImage>()));
     }
 
     /// <summary>读取单元格内的纯文本。</summary>
@@ -151,14 +156,15 @@ internal sealed class OdpParser : ISpecificParser
 
     public IReadOnlySet<string> MimeTypes => Mimes;
 
-    public Task<string> ParseAsync(Stream content, CancellationToken cancellationToken)
+    /// <summary>从 ODP content.xml 中提取文本框内容。</summary>
+    public Task<DocumentParseResult> ParseAsync(Stream content, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         using var archive = new ZipArchive(content, ZipArchiveMode.Read, leaveOpen: true);
         var entry = archive.GetEntry("content.xml");
         if (entry is null)
         {
-            return Task.FromResult(string.Empty);
+            return Task.FromResult(new DocumentParseResult(string.Empty, Array.Empty<ExtractedImage>()));
         }
 
         var sb = new System.Text.StringBuilder();
@@ -187,7 +193,7 @@ internal sealed class OdpParser : ISpecificParser
             }
         }
 
-        return Task.FromResult(sb.ToString().Trim());
+        return Task.FromResult(new DocumentParseResult(sb.ToString().Trim(), Array.Empty<ExtractedImage>()));
     }
 
     private static List<string> ExtractTextP(string boxXml)

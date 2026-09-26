@@ -2,6 +2,8 @@ using HtmlAgilityPack;
 
 namespace TigerRAG.Infrastructure.Parsing;
 
+using TigerRAG.Application.Documents.Indexing;
+
 /// <summary>HTML 解析器：剥离标签，保留文本内容和换行语义。</summary>
 internal sealed class HtmlParser : ISpecificParser
 {
@@ -19,12 +21,14 @@ internal sealed class HtmlParser : ISpecificParser
 
     public IReadOnlySet<string> MimeTypes => Mimes;
 
-    public Task<string> ParseAsync(Stream content, CancellationToken cancellationToken)
+    /// <summary>剥离 HTML 标签，保留文本内容和换行语义。</summary>
+    public Task<DocumentParseResult> ParseAsync(Stream content, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var doc = new HtmlDocument();
         doc.Load(content);
-        return Task.FromResult(ExtractText(doc.DocumentNode));
+        var text = ExtractText(doc.DocumentNode);
+        return Task.FromResult(new DocumentParseResult(text, Array.Empty<ExtractedImage>()));
     }
 
     private static string ExtractText(HtmlNode node)

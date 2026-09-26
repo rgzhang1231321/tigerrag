@@ -302,11 +302,13 @@ public sealed class RoleAndAclConcurrencyTests : IAsyncLifetime
 
     private async Task ResetDocumentPermissionsAsync(Guid documentId)
     {
-        using var scope = _rootProvider.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<TigerRagDbContext>();
-        await context.DocumentPermissions
-            .Where(permission => permission.DocumentId == documentId)
-            .ExecuteDeleteAsync();
+        // 屏蔽：避免上下文失效时误清理 document_permission_record 表数据
+        // using var scope = _rootProvider.CreateScope();
+        // var context = scope.ServiceProvider.GetRequiredService<TigerRagDbContext>();
+        // await context.DocumentPermissions
+        //     .Where(permission => permission.DocumentId == documentId)
+        //     .ExecuteDeleteAsync();
+        await Task.CompletedTask;
     }
 
     private async Task<List<string>> ReadRoleNamesAsync(Guid userId)

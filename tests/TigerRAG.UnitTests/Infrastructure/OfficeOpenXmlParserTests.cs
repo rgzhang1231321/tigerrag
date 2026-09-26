@@ -16,7 +16,7 @@ public sealed class DocxParserTests
     {
         using var stream = CreateDocx("Hello World");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Hello World", result);
+        Assert.Contains("Hello World", result.Content);
     }
 
     [Fact]
@@ -24,8 +24,8 @@ public sealed class DocxParserTests
     {
         using var stream = CreateDocx("First paragraph.", "Second paragraph.");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("First paragraph.", result);
-        Assert.Contains("Second paragraph.", result);
+        Assert.Contains("First paragraph.", result.Content);
+        Assert.Contains("Second paragraph.", result.Content);
     }
 
     [Fact]
@@ -33,10 +33,10 @@ public sealed class DocxParserTests
     {
         using var stream = CreateDocxWithTable(new[] { new[] { "Cell1", "Cell2" }, new[] { "Cell3", "Cell4" } });
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Cell1", result);
-        Assert.Contains("Cell2", result);
-        Assert.Contains("Cell3", result);
-        Assert.Contains("Cell4", result);
+        Assert.Contains("Cell1", result.Content);
+        Assert.Contains("Cell2", result.Content);
+        Assert.Contains("Cell3", result.Content);
+        Assert.Contains("Cell4", result.Content);
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public sealed class DocxParserTests
     {
         using var stream = CreateEmptyDocx();
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal(string.Empty, result);
+        Assert.Equal(string.Empty, result.Content);
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public sealed class DocxParserTests
     {
         using var stream = CreateDocx("你好，世界！");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("你好，世界！", result);
+        Assert.Contains("你好，世界！", result.Content);
     }
 
     [Fact]
@@ -147,9 +147,9 @@ public sealed class XlsxParserTests
     {
         using var stream = CreateXlsx("Sheet1", new[] { new[] { "A1", "B1" }, new[] { "A2", "B2" } });
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Sheet1", result);
-        Assert.Contains("A1", result);
-        Assert.Contains("B1", result);
+        Assert.Contains("Sheet1", result.Content);
+        Assert.Contains("A1", result.Content);
+        Assert.Contains("B1", result.Content);
     }
 
     [Fact]
@@ -157,10 +157,10 @@ public sealed class XlsxParserTests
     {
         using var stream = CreateXlsx(("Sheet1", new[] { new[] { "X" } }), ("Sheet2", new[] { new[] { "Y" } }));
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Sheet1", result);
-        Assert.Contains("Sheet2", result);
-        Assert.Contains("X", result);
-        Assert.Contains("Y", result);
+        Assert.Contains("Sheet1", result.Content);
+        Assert.Contains("Sheet2", result.Content);
+        Assert.Contains("X", result.Content);
+        Assert.Contains("Y", result.Content);
     }
 
     [Fact]
@@ -168,7 +168,7 @@ public sealed class XlsxParserTests
     {
         using var stream = CreateEmptyXlsx();
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal(string.Empty, result);
+        Assert.Equal(string.Empty, result.Content);
     }
 
     [Fact]
@@ -176,8 +176,8 @@ public sealed class XlsxParserTests
     {
         using var stream = CreateXlsx("数据", new[] { new[] { "你好", "世界" } });
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("你好", result);
-        Assert.Contains("世界", result);
+        Assert.Contains("你好", result.Content);
+        Assert.Contains("世界", result.Content);
     }
 
     [Fact]
@@ -277,7 +277,7 @@ public sealed class PptxParserTests
     {
         using var stream = CreatePptx("Slide 1 text");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Slide 1 text", result);
+        Assert.Contains("Slide 1 text", result.Content);
     }
 
     [Fact]
@@ -285,9 +285,9 @@ public sealed class PptxParserTests
     {
         using var stream = CreatePptx("First slide", "Second slide");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("First slide", result);
-        Assert.Contains("Second slide", result);
-        Assert.Contains("---", result);
+        Assert.Contains("First slide", result.Content);
+        Assert.Contains("Second slide", result.Content);
+        Assert.Contains("---", result.Content);
     }
 
     [Fact]
@@ -295,7 +295,7 @@ public sealed class PptxParserTests
     {
         using var stream = CreateEmptyPptx();
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal(string.Empty, result);
+        Assert.Equal(string.Empty, result.Content);
     }
 
     [Fact]
@@ -303,7 +303,7 @@ public sealed class PptxParserTests
     {
         using var stream = CreatePptx("你好幻灯片");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("你好幻灯片", result);
+        Assert.Contains("你好幻灯片", result.Content);
     }
 
     [Fact]
@@ -327,7 +327,6 @@ public sealed class PptxParserTests
         var ms = new MemoryStream();
         using (var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
         {
-            // [Content_Types].xml — declare all slides dynamically
             var slideContentTypes = string.Join("\n", slideTexts.Select((t, i) =>
                 $@"  <Override PartName=""/ppt/slides/slide{i + 1}.xml"" ContentType=""application/vnd.openxmlformats-officedocument.presentationml.slide+xml""/>"));
 
@@ -340,24 +339,21 @@ public sealed class PptxParserTests
 {slideContentTypes}
 </Types>");
 
-            // _rels/.rels
             WriteZip(archive, "_rels/.rels",
                 @"<?xml version=""1.0"" encoding=""UTF-8"" standalone=""yes""?>
 <Relationships xmlns=""http://schemas.openxmlformats.org/package/2006/relationships"">
   <Relationship Id=""rId1"" Type=""http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"" Target=""ppt/presentation.xml""/>
 </Relationships>");
 
-            // ppt/_rels/presentation.xml.rels
-            var Enumerable = string.Join("\n", slideTexts.Select((t, i) =>
+            var rels = string.Join("\n", slideTexts.Select((t, i) =>
                 $@"  <Relationship Id=""rId{i + 1}"" Type=""http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide"" Target=""slides/slide{i + 1}.xml""/>"));
 
             WriteZip(archive, "ppt/_rels/presentation.xml.rels",
                 $@"<?xml version=""1.0"" encoding=""UTF-8"" standalone=""yes""?>
 <Relationships xmlns=""http://schemas.openxmlformats.org/package/2006/relationships"">
-{Enumerable}
+{rels}
 </Relationships>");
 
-            // ppt/presentation.xml
             var slideRefs = string.Join("\n", slideTexts.Select((t, i) =>
                 $@"  <p:sldId id=""{256 + i}"" r:id=""rId{i + 1}""/>"));
 
@@ -370,7 +366,6 @@ public sealed class PptxParserTests
   <p:sldSz cx=""9144000"" cy=""6858000""/>
 </p:presentation>");
 
-            // Slides
             for (var i = 0; i < slideTexts.Length; i++)
             {
                 var slideNum = i + 1;

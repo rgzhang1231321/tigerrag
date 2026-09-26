@@ -64,11 +64,12 @@ public sealed class CachedRoleEndpointGrantStoreTests
     }
 
     [Fact]
-    public async Task HasGrantAsync_CacheReadThrows_FallsBackToInner()
+    public async Task HasGrantAsync_CacheReadReturnsNull_FallsBackToInner()
     {
+        // 方案 A：缓存实现内部吞掉传输层异常，对外返回 null 等价于 miss。
         var inner = new StubInnerStore();
         inner.OnListByRole = _ => [new RoleEndpointGrant(Admin, "documents", Endpoint, DateTimeOffset.UtcNow, Guid.NewGuid())];
-        var cache = new StubCache { GetThrows = new RedisConnectionException(ConnectionFailureType.UnableToConnect, "down") };
+        var cache = new StubCache();  // 空 store → 返回 null（miss）
         var sut = new CachedRoleEndpointGrantStore(inner, cache, NullLogger<CachedRoleEndpointGrantStore>.Instance);
 
         var result = await sut.HasGrantAsync([Admin], Endpoint, CancellationToken.None);
@@ -78,16 +79,18 @@ public sealed class CachedRoleEndpointGrantStoreTests
     }
 
     [Fact]
-    public async Task HasGrantAsync_CacheWriteThrows_StillReturnsCorrectAnswer()
+    public async Task HasGrantAsync_CacheWriteReturnsNull_StillReturnsCorrectAnswer()
     {
+        // 方案 A：缓存写入由实现内部处理；调用方只关心读路径正确性。
         var inner = new StubInnerStore();
         inner.OnListByRole = _ => [new RoleEndpointGrant(Admin, "documents", Endpoint, DateTimeOffset.UtcNow, Guid.NewGuid())];
-        var cache = new StubCache { SetThrows = new RedisConnectionException(ConnectionFailureType.UnableToConnect, "down") };
+        var cache = new StubCache();
         var sut = new CachedRoleEndpointGrantStore(inner, cache, NullLogger<CachedRoleEndpointGrantStore>.Instance);
 
         var result = await sut.HasGrantAsync([Admin], Endpoint, CancellationToken.None);
 
-        Assert.True(result);  // 写失败不阻断本次请求
+        Assert.True(result);  // 回填读路径正常
+        Assert.Equal(1, cache.SetCalls);
     }
 
     [Fact]

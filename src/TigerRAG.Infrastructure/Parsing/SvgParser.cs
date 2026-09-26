@@ -2,6 +2,8 @@ using System.Xml.Linq;
 
 namespace TigerRAG.Infrastructure.Parsing;
 
+using TigerRAG.Application.Documents.Indexing;
+
 /// <summary>SVG 解析器：提取 &lt;text&gt;, &lt;tspan&gt;, &lt;textPath&gt; 节点内容。</summary>
 internal sealed class SvgParser : ISpecificParser
 {
@@ -17,7 +19,8 @@ internal sealed class SvgParser : ISpecificParser
 
     public IReadOnlySet<string> MimeTypes => Mimes;
 
-    public Task<string> ParseAsync(Stream content, CancellationToken cancellationToken)
+    /// <summary>提取 SVG 中 text/tspan/textPath 节点的文本内容。</summary>
+    public Task<DocumentParseResult> ParseAsync(Stream content, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var sb = new System.Text.StringBuilder();
@@ -35,6 +38,7 @@ internal sealed class SvgParser : ISpecificParser
             }
         }
 
-        return Task.FromResult(sb.ToString().Trim());
+        var result = sb.ToString().Trim();
+        return Task.FromResult(new DocumentParseResult(result, Array.Empty<ExtractedImage>()));
     }
 }

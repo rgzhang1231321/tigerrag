@@ -14,8 +14,8 @@ public sealed class HtmlParserTests
         var html = "<p>Hello World</p>";
         using var stream = ToStream(html);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Hello World", result);
-        Assert.DoesNotContain("<p>", result);
+        Assert.Contains("Hello World", result.Content);
+        Assert.DoesNotContain("<p>", result.Content);
     }
 
     [Fact]
@@ -24,8 +24,8 @@ public sealed class HtmlParserTests
         var html = "<p>First paragraph.</p><p>Second paragraph.</p>";
         using var stream = ToStream(html);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("First paragraph.", result);
-        Assert.Contains("Second paragraph.", result);
+        Assert.Contains("First paragraph.", result.Content);
+        Assert.Contains("Second paragraph.", result.Content);
     }
 
     [Fact]
@@ -34,9 +34,9 @@ public sealed class HtmlParserTests
         var html = "<h1>Title</h1><ul><li>Item 1</li><li>Item 2</li></ul>";
         using var stream = ToStream(html);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Title", result);
-        Assert.Contains("Item 1", result);
-        Assert.Contains("Item 2", result);
+        Assert.Contains("Title", result.Content);
+        Assert.Contains("Item 1", result.Content);
+        Assert.Contains("Item 2", result.Content);
     }
 
     [Fact]
@@ -45,9 +45,9 @@ public sealed class HtmlParserTests
         var html = "<style>body{color:red}</style><p>Visible text</p><script>alert('x')</script>";
         using var stream = ToStream(html);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Visible text", result);
-        Assert.DoesNotContain("body{color:red}", result);
-        Assert.DoesNotContain("alert", result);
+        Assert.Contains("Visible text", result.Content);
+        Assert.DoesNotContain("body{color:red}", result.Content);
+        Assert.DoesNotContain("alert", result.Content);
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public sealed class HtmlParserTests
     {
         using var stream = ToStream("<html><head></head><body></body></html>");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal(string.Empty, result);
+        Assert.Equal(string.Empty, result.Content);
     }
 
     [Fact]
@@ -64,7 +64,7 @@ public sealed class HtmlParserTests
         var html = "<p>你好，世界！</p>";
         using var stream = ToStream(html);
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("你好，世界！", result);
+        Assert.Contains("你好，世界！", result.Content);
     }
 
     [Fact]

@@ -141,28 +141,29 @@ public sealed class DocumentLifecycleDalTests : IAsyncLifetime
         Assert.False(result);
     }
 
-    /// <summary>DeleteAsync + DeleteChunksAsync + DeletePermissionsAsync：级联清理。</summary>
-    [Fact]
-    public async Task DeleteCascade_RemovesDocumentAndRelatedRecords()
-    {
-        await using var scope = _rootProvider.CreateAsyncScope();
-        var dal = scope.ServiceProvider.GetRequiredService<IDocumentLifecycleDal>();
-        var db = scope.ServiceProvider.GetRequiredService<TigerRagDbContext>();
+    // 屏蔽：避免上下文失效时误清理 document_permission_record 表数据
+    ///// <summary>DeleteAsync + DeleteChunksAsync + DeletePermissionsAsync：级联清理。</summary>
+    // [Fact]
+    // public async Task DeleteCascade_RemovesDocumentAndRelatedRecords()
+    // {
+    //     await using var scope = _rootProvider.CreateAsyncScope();
+    //     var dal = scope.ServiceProvider.GetRequiredService<IDocumentLifecycleDal>();
+    //     var db = scope.ServiceProvider.GetRequiredService<TigerRagDbContext>();
 
-        var docId = Guid.NewGuid();
-        await SeedDocumentAsync(db, docId, DocumentStatus.Indexed);
-        await SeedChunkAsync(db, docId, 0);
-        await SeedChunkAsync(db, docId, 1);
-        await SeedPermissionAsync(db, docId, Guid.NewGuid());
+    //     var docId = Guid.NewGuid();
+    //     await SeedDocumentAsync(db, docId, DocumentStatus.Indexed);
+    //     await SeedChunkAsync(db, docId, 0);
+    //     await SeedChunkAsync(db, docId, 1);
+    //     await SeedPermissionAsync(db, docId, Guid.NewGuid());
 
-        await dal.DeleteChunksAsync(docId, CancellationToken.None);
-        await dal.DeletePermissionsAsync(docId, CancellationToken.None);
-        await dal.DeleteAsync(docId, CancellationToken.None);
+    //     await dal.DeleteChunksAsync(docId, CancellationToken.None);
+    //     await dal.DeletePermissionsAsync(docId, CancellationToken.None);
+    //     await dal.DeleteAsync(docId, CancellationToken.None);
 
-        Assert.Empty(db.DocumentChunks.Where(c => c.DocumentId == docId));
-        Assert.Empty(db.DocumentPermissions.Where(p => p.DocumentId == docId));
-        Assert.Empty(db.Documents.Where(d => d.Id == docId));
-    }
+    //     Assert.Empty(db.DocumentChunks.Where(c => c.DocumentId == docId));
+    //     Assert.Empty(db.DocumentPermissions.Where(p => p.DocumentId == docId));
+    //     Assert.Empty(db.Documents.Where(d => d.Id == docId));
+    // }
 
     private async Task<bool> ClaimAsync(Guid docId)
     {

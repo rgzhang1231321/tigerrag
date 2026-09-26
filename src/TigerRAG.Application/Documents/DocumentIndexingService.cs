@@ -59,7 +59,7 @@ public class DocumentIndexingService(
         {
             await using var file = await fileStorage.OpenReadAsync(document.StoragePath, cancellationToken);
             var content = await parser.ParseAsync(file, document.FileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? "application/pdf" : null, cancellationToken);
-            var chunks = chunker.Split(content);
+            var chunks = chunker.Split(content.Content);
             var vectors = await embeddingGenerator.GenerateAsync(chunks, cancellationToken);
             await vectorIndex.ReplaceDocumentAsync(document, chunks, vectors, cancellationToken);
 

@@ -2,6 +2,8 @@ using MimeKit;
 
 namespace TigerRAG.Infrastructure.Parsing;
 
+using TigerRAG.Application.Documents.Indexing;
+
 /// <summary>EML 解析器：提取邮件正文（纯文本优先，否则 HTML 剥离标签）。</summary>
 internal sealed class EmlParser : ISpecificParser
 {
@@ -12,22 +14,23 @@ internal sealed class EmlParser : ISpecificParser
 
     public IReadOnlySet<string> MimeTypes => Mimes;
 
-    public async Task<string> ParseAsync(Stream content, CancellationToken cancellationToken)
+    /// <summary>提取邮件正文（纯文本优先，否则 HTML 剥离标签）。</summary>
+    public async Task<DocumentParseResult> ParseAsync(Stream content, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var message = await MimeMessage.LoadAsync(content, cancellationToken);
 
+        var text = string.Empty;
         if (message.TextBody is not null)
         {
-            return message.TextBody.Trim();
+            text = message.TextBody.Trim();
         }
-
-        if (message.HtmlBody is not null)
+        else if (message.HtmlBody is not null)
         {
-            return StripHtml(message.HtmlBody).Trim();
+            text = StripHtml(message.HtmlBody).Trim();
         }
 
-        return string.Empty;
+        return new DocumentParseResult(text, Array.Empty<ExtractedImage>());
     }
 
     private static string StripHtml(string html)

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using TigerRAG.Application.Auth;
@@ -25,7 +26,7 @@ public sealed class RedisRoleEndpointGrantCacheTests : IDisposable
             if (_redisAvailable)
             {
                 var options = Options.Create(new GrantCacheOptions { TtlSeconds = 60 });
-                _cache = new RedisRoleEndpointGrantCache(_multiplexer, options);
+                _cache = new RedisRoleEndpointGrantCache(_multiplexer, options, NullLogger<RedisRoleEndpointGrantCache>.Instance);
             }
         }
         catch
@@ -98,7 +99,8 @@ public sealed class RedisRoleEndpointGrantCacheTests : IDisposable
 
         var ttlCache = new RedisRoleEndpointGrantCache(
             _multiplexer!,
-            Options.Create(new GrantCacheOptions { TtlSeconds = 60 }));
+            Options.Create(new GrantCacheOptions { TtlSeconds = 60 }),
+            NullLogger<RedisRoleEndpointGrantCache>.Instance);
         var role = $"ttl-{Guid.NewGuid():N}";
         await ttlCache.SetRoleEndpointsAsync(role, ["x"], CancellationToken.None);
 

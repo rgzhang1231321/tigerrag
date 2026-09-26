@@ -372,7 +372,8 @@ internal sealed class NoopFileStorage : IDocumentFileStorage
 
 internal sealed class NoopParser : IDocumentParser
 {
-    public Task<string> ParseAsync(Stream content, string? mimeType, CancellationToken cancellationToken) => Task.FromResult("");
+    public Task<DocumentParseResult> ParseAsync(Stream content, string? mimeType, CancellationToken cancellationToken)
+        => Task.FromResult(new DocumentParseResult(string.Empty, Array.Empty<ExtractedImage>()));
 }
 
 internal sealed class NoopChunker : ITextChunker

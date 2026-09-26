@@ -34,6 +34,7 @@ using TigerRAG.Infrastructure.Parsing;
 using TigerRAG.Infrastructure.Persistence;
 using TigerRAG.Infrastructure.Queue;
 using TigerRAG.Infrastructure.Roles.Dal;
+using TigerRAG.Infrastructure.Statistics;
 using TigerRAG.Infrastructure.Statistics.Dal;
 using TigerRAG.Infrastructure.Users;
 using TigerRAG.Infrastructure.KnowledgeBases.Dal;
@@ -93,6 +94,7 @@ public static class InfrastructureComposition
         services.AddScoped<UserRoleService>();
         services.AddScoped<DocumentAccessService>();
         services.AddScoped<IStatisticsDal, StatisticsDal>();
+        services.AddSingleton<IReportCache, RedisReportCache>();
         services.AddScoped<IStatisticsService, StatisticsService>();
         services.AddScoped<IApiLogDal, ApiLogDal>();
         services.AddScoped<ApiLogService>();

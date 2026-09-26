@@ -14,7 +14,7 @@ public sealed class OdtParserTests
     {
         using var stream = CreateOdf("text:p", "Hello ODT");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Hello ODT", result);
+        Assert.Contains("Hello ODT", result.Content);
     }
 
     [Fact]
@@ -22,8 +22,8 @@ public sealed class OdtParserTests
     {
         using var stream = CreateOdf("text:p", "First para.", "Second para.");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("First para.", result);
-        Assert.Contains("Second para.", result);
+        Assert.Contains("First para.", result.Content);
+        Assert.Contains("Second para.", result.Content);
     }
 
     [Fact]
@@ -31,7 +31,7 @@ public sealed class OdtParserTests
     {
         using var stream = CreateEmptyOdf();
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal(string.Empty, result);
+        Assert.Equal(string.Empty, result.Content);
     }
 
     [Fact]
@@ -39,7 +39,7 @@ public sealed class OdtParserTests
     {
         using var stream = CreateOdfWithoutContentXml();
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal(string.Empty, result);
+        Assert.Equal(string.Empty, result.Content);
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public sealed class OdtParserTests
     {
         using var stream = CreateOdf("text:p", "你好 ODT 文档");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("你好 ODT 文档", result);
+        Assert.Contains("你好 ODT 文档", result.Content);
     }
 
     [Fact]
@@ -133,8 +133,8 @@ public sealed class OdsParserTests
     {
         using var stream = CreateOds(new[] { new[] { "A", "B" } });
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("A", result);
-        Assert.Contains("B", result);
+        Assert.Contains("A", result.Content);
+        Assert.Contains("B", result.Content);
     }
 
     [Fact]
@@ -142,8 +142,8 @@ public sealed class OdsParserTests
     {
         using var stream = CreateOds(new[] { new[] { "R1C1", "R1C2" }, new[] { "R2C1", "R2C2" } });
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("R1C1", result);
-        Assert.Contains("R2C2", result);
+        Assert.Contains("R1C1", result.Content);
+        Assert.Contains("R2C2", result.Content);
     }
 
     [Fact]
@@ -151,7 +151,7 @@ public sealed class OdsParserTests
     {
         using var stream = CreateEmptyOds();
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal(string.Empty, result);
+        Assert.Equal(string.Empty, result.Content);
     }
 
     [Fact]
@@ -159,8 +159,8 @@ public sealed class OdsParserTests
     {
         using var stream = CreateOds(new[] { new[] { "姓名", "年龄" } });
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("姓名", result);
-        Assert.Contains("年龄", result);
+        Assert.Contains("姓名", result.Content);
+        Assert.Contains("年龄", result.Content);
     }
 
     [Fact]
@@ -239,7 +239,7 @@ public sealed class OdpParserTests
     {
         using var stream = CreateOdp("Presentation title");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Presentation title", result);
+        Assert.Contains("Presentation title", result.Content);
     }
 
     [Fact]
@@ -247,9 +247,9 @@ public sealed class OdpParserTests
     {
         using var stream = CreateOdp("Title slide", "Content slide");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("Title slide", result);
-        Assert.Contains("Content slide", result);
-        Assert.Contains("---", result);
+        Assert.Contains("Title slide", result.Content);
+        Assert.Contains("Content slide", result.Content);
+        Assert.Contains("---", result.Content);
     }
 
     [Fact]
@@ -257,7 +257,7 @@ public sealed class OdpParserTests
     {
         using var stream = CreateEmptyOdp();
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Equal(string.Empty, result);
+        Assert.Equal(string.Empty, result.Content);
     }
 
     [Fact]
@@ -265,7 +265,7 @@ public sealed class OdpParserTests
     {
         using var stream = CreateOdp("你好演示文稿");
         var result = await _parser.ParseAsync(stream, CancellationToken.None);
-        Assert.Contains("你好演示文稿", result);
+        Assert.Contains("你好演示文稿", result.Content);
     }
 
     [Fact]
